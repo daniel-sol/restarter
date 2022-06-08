@@ -1,6 +1,7 @@
 import logging
 import re
-import argparse
+import time
+from collections import OrderedDict
 from subprocess import Popen, PIPE, CalledProcessError
 from pathlib import Path
 import numpy as np
@@ -13,11 +14,9 @@ LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.DEBUG)
 # LOGGER.addHandler(logging.NullHandler())
 # Names to use of the keys in the contents dictionary
-HEAD_NAMES = "headers"
-HEAD_LINES = "header line"
-HEAD_CONT = "header contents"
-SOL_NAME = "solution name"
-SOL_VALUES = "solutions"
+HEAD_LINE = "header line"
+CONTENTS_NAME = "Contents"
+TYPE_NAME = "type"
 
 def parse_intehead(inte_string):
     """parses the string containing intehead
@@ -25,15 +24,17 @@ def parse_intehead(inte_string):
     inte_string (str): string containing the intehead
     returns date (str): the column name to select from the corresponding ecl2df
     """
+    LOGGER.debug("What to parse:")
+    LOGGER.debug(inte_string)
     parts = re.findall(r".*\n", inte_string)
-    print(parts)
-    print(parts[11])
-    print(parts[10])
+    LOGGER.debug(parts)
+    LOGGER.debug(parts[11])
+    LOGGER.debug(parts[10])
 
     year_part = re.search(r"(\d{4})\s", parts[11]).group(1)
-    print(year_part)
+    LOGGER.debug(year_part)
     day_part = re.search(r"\d+\s+\d{1,2}\s*$",parts[10] ).group(0).split()
-    print(day_part)
+    LOGGER.debug(day_part)
     return_date = f"@{year_part}-{day_part[0]}-{day_part[1]}"
     return return_date
 
@@ -66,19 +67,39 @@ def split_head(line):
     return parts
 
 
-def add_contents(contents, type_name, name, line):
+def add_contents(contents, type_name, name, text):
     """Adds to the main dictionary,
     args:
         content (dict): the main dictionary
         type_name (str): name of one of the dictionaries of dict
         name (str): name of one of the keys in the dict of dict named type_name
-        line (str): text string to be stored as value corresponding to name
+        text (str): text string to be stored as value corresponding to name
     """
     if name not in contents[type_name]:
         contents[type_name][name] = []
-    contents[type_name][name].append(line)
+    contents[type_name][name].append(text)
 
 
+def count_blocks(block, val_count=True):
+    """Checks block of text for how many lines
+        args:
+         block (str): the block of text to check
+    """
+    line_count = len(block.split("\n"))
+    number_count = len(re.findall(r"[0-9\.]+", block))
+    LOGGER.debug("Block has %i lines, and %i values", line_count, number_count)
+    if val_count:
+        return_value = number_count
+    else:
+        return_value = line_count
+    return return_value
+        # time.sleep(1)
+
+
+# def check_fun(contents):
+#     """Checking that the dictionary is aligned"""
+#     for date in contents:
+#         for date.
 def read_fun(path):
     """Reads funrst file
     args:
@@ -86,69 +107,83 @@ def read_fun(path):
     returns contents (dictionary)
     """
     LOGGER.debug("Reading from %s", path)
-    contents = {HEAD_NAMES: [], HEAD_LINES: [], HEAD_CONT: {},
-                SOL_NAME: [], SOL_VALUES: {}}
 
+    contents = OrderedDict()
+
+    type_name = "headers"
+    block = ""
+    prev_name = None
     head_name = None
-    sol_listen = False
-    block = None
-    prev_name = "Not assigned"
     discrete = False
+
     try:
         with open(path, "r") as funhandle:
             LOGGER.debug("Opening the show")
             sol_listen = False
-
+            # matches lines with possible whitespace,
+            # then letters inside '' then whitespace,
+            # also needed to add 1 / and _, because you have names like
+            # 1/BO and WAT_DEN
+            # then numbers,
+            # then letters inside ''
+            head_pattern = re.compile(
+                r"(\s+)?'([1\/_A-Z\s]+)'\s+(\d+)\s+'([A-Z]+)'"
+            )
             for line in funhandle:
-                # matches lines with possible whitespace,
-                # then letters inside '' then whitespace,
-                # also needed to add 1 / and _, because you have names like
-                # 1/BO and WAT_DEN
-                # then numbers,
-                # then letters inside ''
-                head_m = re.match(r"(\s+)?'([1\/_A-Z\s]+)'\s+(\d+)\s+'([A-Z]+)'",
-                                  line)
+                # LOGGER.debug(line)
+                # LOGGER.debug(date_record)
+                if head_pattern.match(line):
+                    LOGGER.debug(f"prev: {prev_name} current: {head_name}")
+                    # Storing results from earlier reading
+                    try:
+                        if type_name not in date_record:
+                            date_record[type_name] = OrderedDict()
+                        date_record[type_name][head_name] = name_record
 
-                if head_m:
+                    except UnboundLocalError:
+                        LOGGER.debug("Date record does not exist")
+                    except TypeError:
+                        LOGGER.debug("Date record is not initialized properly")
+
                     if prev_name == "INTEHEAD":
                         date = parse_intehead(block)
-                        print(date)
-                        exit()
-                    LOGGER.debug(line)
-                    head_name = split_head(line)[0]
-                    LOGGER.debug("---> %s", head_name)
-                    if block is not None:
-                        LOGGER.debug("--> Block defined")
-                        if sol_listen:
-                            LOGGER.debug("--> storing block in solutions")
-                            split_block = block.split("\n")
-                            LOGGER.debug("%s lines are %i", prev_name,
-                                         len(split_block))
-                            # time.sleep(1)
-                            add_contents(contents, SOL_VALUES, prev_name, block)
-                            contents[SOL_NAME].append(head_name)
-                            block = ""
-                    LOGGER.debug("--> adding and appending head, and full line")
-                    add_contents(contents, HEAD_CONT, prev_name, block)
+                        date_record = {}
+                        # LOGGER.debug(date_record)
 
-                    contents[HEAD_NAMES].append(head_name)
+                    if len(block) > 0:
+                        LOGGER.debug("--> Block defined")
+                        name_record[CONTENTS_NAME] = block # count_blocks(block)
+                        # print(name_record)
+                        # print(date_record)
+                        # exit()
+                        block = ""
+
+                    # Defines the name record for the next header
+                    head_name, _, head_type = split_head(line)
+                    name_record = {HEAD_LINE: line, TYPE_NAME: head_type}
                     discrete = "INTE" in line
-                    contents[HEAD_LINES].append(line)
-                    LOGGER.debug(head_name)
-                    block = ""
+
+                    LOGGER.debug("---> %s", head_name)
+
+                    if head_name == "STARTSOL":
+                        type_name = "solutions"
+                        block = ""
+
+                    if head_name == "SEQNUM":
+                        type_name = "headers"
+                        try:
+                            contents[date] = date_record
+                            # print(date_record)
+                        except UnboundLocalError:
+                            LOGGER.debug("No date record defined yet")
+                        time.sleep(1)
+                        # exit()
                     prev_name = head_name
 
-                if not head_m:
+                else:
                     if discrete:
                         line = re.sub(r"\.[0-9]+", "", line)
                     block += line
-
-                if head_name == "STARTSOL":
-                    sol_listen = True
-                    block = ""
-
-                if head_name == "ENDSOL":
-                    sol_listen = False
 
     except UnicodeDecodeError:
         LOGGER.error("Cannot read %s, is this a binary file?", path)
@@ -156,7 +191,8 @@ def read_fun(path):
     except FileNotFoundError:
         LOGGER.error("Cannot read %s, file does not exist", path)
 
-
+    contents[date] = date_record
+    print("returning ", contents)
     return contents
 
 
@@ -166,29 +202,17 @@ def write_fun(contents, file_name="TEST.FUNRST"):
            contents (dict): dictionary with contents of future file
            file_name (str): name of output file
     """
-    write_sol = False
+    # write_sol = False
     LOGGER.debug("Writing %s", file_name)
     with open(file_name, "w") as outhandle:
-        for i, head_name in enumerate(contents[HEAD_NAMES]):
-            LOGGER.debug(head_name)
-            head_line = contents[HEAD_LINES][i]
-            outhandle.write(contents[HEAD_LINES][i])
-            try:
-                outline = contents[HEAD_CONT][head_name].pop(0)
-
-                outhandle.write(outline)
-            except IndexError:
-                LOGGER.warning("Cannot dump header contents for %s", head_name)
-            except KeyError:
-                LOGGER.warning("Cannot write %s", head_name)
-
-            if head_name == "ENDSOL":
-                write_sol = False
-            if write_sol:
-                outhandle.write(contents[SOL_VALUES][head_name].pop(0))
-
-            if head_name == "STARTSOL":
-                write_sol = True
+        for date in contents:
+            LOGGER.debug(date)
+            for data_type in contents[date]:
+                section = contents[date][data_type]
+                for header_name in section:
+                        part = section[header_name]
+                        outhandle.write(part[HEAD_LINE])
+                        outhandle.write(part[CONTENTS_NAME])
     LOGGER.info("Written %s", file_name)
     return file_name
 
