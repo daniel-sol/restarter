@@ -45,18 +45,21 @@ def read_grdecl(path):
     """Reads eclipse grdecl parameter from file
     args:
     path (str): path to file
-    returns record (dict): name found in file asd key,
+    returns numbers (pd.Series): name found in file asd key,
                            the numbers from the file as values
     """
     contents = Path(path).read_text()
     # LOGGER.debug(contents)
-    strings = [name for name in re.findall(r"[A-Za-z^\s]+", contents)
+    strings = [name for name in re.findall(r"[A-Za-z]+", contents)
                if "ECHO" not in name]
+    LOGGER.debug(strings)
     name = strings.pop()
 
-    numbers = [num.strip() for num in re.findall(r"[0-9\.]+\s+", contents)]
-    record = {name: numbers}
-    return record
+    numbers = pd.Series(
+        [num.strip() for num in re.findall(r"[0-9\.]+\s+", contents)],
+        name=name
+    )
+    return numbers
 
 
 def split_head(line):

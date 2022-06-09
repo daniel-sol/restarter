@@ -22,11 +22,12 @@ def test_read_grdecl(path="../../../../rms/output/pressure.grdecl"):
     args:
     path (str): path to grdec file
     """
-    outdict = helpers.read_grdecl(path)
-    print(outdict.keys())
+    out = helpers.read_grdecl(path)
+    print(out)
+    assert out.name == "Hydrostatic", "Name is wrong"
     # print(outdict)
 
 
 if __name__ == "__main__":
-    # test_read_grdecl()
-    test_investigate_string()
+    test_read_grdecl()
+    # test_investigate_string()
