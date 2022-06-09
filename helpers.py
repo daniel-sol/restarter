@@ -211,7 +211,11 @@ def write_fun(contents, file_name="TEST.FUNRST"):
                 section = contents[date][data_type]
                 for header_name in section:
                         part = section[header_name]
+                        print(header_name)
+                        print(part.keys())
                         outhandle.write(part[HEAD_LINE])
+                        if header_name == "STARTSOL":
+                            continue
                         outhandle.write(part[CONTENTS_NAME])
     LOGGER.info("Written %s", file_name)
     return file_name
