@@ -95,6 +95,44 @@ def count_blocks(block, val_count=True):
     return return_value
         # time.sleep(1)
 
+def read_back_fun(fun_path):
+    """Reads file, returns a list of the lines
+    args:
+       fun_path (str): path to file
+    raises OSError:
+
+    """
+    contents = []
+    try:
+        with open(fun_path, "r") as funhandle:
+            contents = funhandle.read().split("\n")
+    except OSError as ose:
+        raise OSError("Cannot open ", fun_path) from ose
+    return contents
+
+
+def check_files(first_fun, second_fun):
+
+    """Compares two FUNRST files
+    args:
+        first_fun (str): path to file
+        second_fun (str): path to file
+    """
+    LOGGER.info("Comparing %s vs %s\n", first_fun, second_fun)
+    LOGGER.info("----------------------------------------------\n")
+    first = read_back_fun(first_fun)
+    second = read_back_fun(second_fun)
+    first_length = len(first)
+    second_length = len(second)
+
+    if first_length != second_length:
+        LOGGER.warning("Difference in length first is %i, second %i",
+                       first_length, second_length)
+    for i, first_line in enumerate(first):
+        if first_line != second[i]:
+            LOGGER.warning("Line %i: \n|%s|\n|%s|\n", i, first_line, second[i])
+            exit()
+
 
 # def check_fun(contents):
 #     """Checking that the dictionary is aligned"""
@@ -147,21 +185,21 @@ def read_fun(path):
 
                     if prev_name == "INTEHEAD":
                         date = parse_intehead(block)
-                        date_record = {}
                         # LOGGER.debug(date_record)
 
                     if len(block) > 0:
                         LOGGER.debug("--> Block defined")
                         name_record[CONTENTS_NAME] = block # count_blocks(block)
-                        # print(name_record)
-                        # print(date_record)
                         # exit()
                         block = ""
 
                     # Defines the name record for the next header
                     head_name, _, head_type = split_head(line)
                     name_record = {HEAD_LINE: line, TYPE_NAME: head_type}
-                    discrete = "INTE" in line
+
+                    # if prev_name == "INTEHEAD":
+                    #     exit()
+                    # discrete = "INTE" in line
 
                     LOGGER.debug("---> %s", head_name)
 
@@ -170,6 +208,7 @@ def read_fun(path):
                         block = ""
 
                     if head_name == "SEQNUM":
+                        date_record = {}
                         type_name = "headers"
                         try:
                             contents[date] = date_record
@@ -190,13 +229,17 @@ def read_fun(path):
 
     except FileNotFoundError:
         LOGGER.error("Cannot read %s, file does not exist", path)
+    # The last ENDSOL will not be included, adding that
+    if head_name == "ENDSOL":
 
+        date_record[type_name][head_name] =  {HEAD_LINE: line, TYPE_NAME: head_type}
+    # The last date record will not be stored, adding that as well
     contents[date] = date_record
-    print("returning ", contents)
+    # print("returning ", contents)
     return contents
 
 
-def write_fun(contents, file_name="TEST.FUNRST"):
+def write_fun(contents, file_name="TEST.FUNRST", check_file=None):
     """Writes FUNRST file from dictionary
        args:
            contents (dict): dictionary with contents of future file
@@ -214,10 +257,13 @@ def write_fun(contents, file_name="TEST.FUNRST"):
                         print(header_name)
                         print(part.keys())
                         outhandle.write(part[HEAD_LINE])
-                        if header_name == "STARTSOL":
+                        if header_name in ["STARTSOL", "ENDSOL"]:
                             continue
                         outhandle.write(part[CONTENTS_NAME])
     LOGGER.info("Written %s", file_name)
+    if check_file is not None:
+
+        check_files(file_name, check_file)
     return file_name
 
 
