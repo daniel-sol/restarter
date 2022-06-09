@@ -1,3 +1,4 @@
+""" Helper functions for reading/modifying and storing restart files"""
 import logging
 import re
 import time
@@ -6,7 +7,7 @@ from subprocess import Popen, PIPE, CalledProcessError
 from pathlib import Path
 import numpy as np
 import pandas as pd
-from ecl2df import grid, EclFiles
+# from ecl2df import grid, EclFiles
 
 
 logging.basicConfig()
@@ -17,6 +18,7 @@ LOGGER.setLevel(logging.DEBUG)
 HEAD_LINE = "header line"
 CONTENTS_NAME = "Contents"
 TYPE_NAME = "type"
+
 
 def parse_intehead(inte_string):
     """parses the string containing intehead
@@ -33,7 +35,7 @@ def parse_intehead(inte_string):
 
     year_part = re.search(r"(\d{4})\s", parts[11]).group(1)
     LOGGER.debug(year_part)
-    day_part = re.search(r"\d+\s+\d{1,2}\s*$",parts[10] ).group(0).split()
+    day_part = re.search(r"\d+\s+\d{1,2}\s*$", parts[10] ).group(0).split()
     LOGGER.debug(day_part)
     return_date = f"@{year_part}-{day_part[0]}-{day_part[1]}"
     return return_date
@@ -47,7 +49,8 @@ def read_grdecl(path):
                            the numbers from the file as values
     """
     contents = Path(path).read_text()
-    strings = [name for name in re.findall(r"^[A-Za-z^\s]+", contents)
+    # LOGGER.debug(contents)
+    strings = [name for name in re.findall(r"[A-Za-z^\s]+", contents)
                if "ECHO" not in name]
     name = strings.pop()
 
@@ -80,20 +83,67 @@ def add_contents(contents, type_name, name, text):
     contents[type_name][name].append(text)
 
 
-def count_blocks(block, val_count=True):
-    """Checks block of text for how many lines
-        args:
-         block (str): the block of text to check
+def string_to_nums(string, cont):
+    """Converts string to numpy array
+       args:
+       string (str): string to convert
+       cont (bool): decides if array is continuous or discrete
+       returns arr (numy array): the string as an array
     """
-    line_count = len(block.split("\n"))
-    number_count = len(re.findall(r"[0-9\.]+", block))
-    LOGGER.debug("Block has %i lines, and %i values", line_count, number_count)
-    if val_count:
-        return_value = number_count
+    types = {True: np.float32, False: np.int32}
+    dtype = types[cont]
+    inv = investigate_string(string)
+    arr = np.array(re.findall(r"[0-9\.]+", string), dtype=dtype)
+    missing = np.empty(inv["missing_count"], dtype=dtype)
+    if cont:
+        missing[:] = np.nan
+    arr = np.concatenate((arr, missing)).reshape(inv["row_count"],
+                                                 inv["col_count"])
+    return arr
+
+
+def nums_to_string(array):
+    """Converts numpy array to string
+    args:
+    array (np.array): what should be converted to string
+    return string (str): string from array"""
+    string = pd.DataFrame(array).to_string(header=False, index=False,
+                                           na_rep="")
+    return string
+
+
+def investigate_string(string):
+    """Checks string of text for how many lines
+        args:
+         string (str): the string of text to check
+    returns investigation (dict): dictionary of checks
+    """
+    rows = string.strip().split("\n")
+    investigation = {}
+
+    investigation["number_count"] = len(re.findall(r"[0-9\.]+", string))
+
+    investigation["row_count"] = len(rows)
+    investigation["col_count"] = len(rows[0].strip().split())
+    investigation["complete_square_count"] = (
+        investigation["row_count"] * investigation["col_count"]
+    )
+    investigation["last_count"] = len(rows[-1].strip().split())
+    investigation["missing_count"] = (
+        investigation["col_count"] - investigation["last_count"]
+    )
+    investigation["missing_check"] = (
+        investigation["complete_square_count"] - investigation["number_count"]
+    )
+
+    if investigation["missing_count"] != investigation["missing_check"]:
+        LOGGER.warning("The numbers don't add up")
     else:
-        return_value = line_count
-    return return_value
-        # time.sleep(1)
+        LOGGER.info("Everything fine")
+
+    LOGGER.debug(investigation)
+    return investigation
+
 
 def read_back_fun(fun_path):
     """Reads file, returns a list of the lines
@@ -131,13 +181,9 @@ def check_files(first_fun, second_fun):
     for i, first_line in enumerate(first):
         if first_line != second[i]:
             LOGGER.warning("Line %i: \n|%s|\n|%s|\n", i, first_line, second[i])
-            exit()
+            break
 
 
-# def check_fun(contents):
-#     """Checking that the dictionary is aligned"""
-#     for date in contents:
-#         for date.
 def read_fun(path):
     """Reads funrst file
     args:
@@ -157,7 +203,6 @@ def read_fun(path):
     try:
         with open(path, "r") as funhandle:
             LOGGER.debug("Opening the show")
-            sol_listen = False
             # matches lines with possible whitespace,
             # then letters inside '' then whitespace,
             # also needed to add 1 / and _, because you have names like
@@ -171,7 +216,7 @@ def read_fun(path):
                 # LOGGER.debug(line)
                 # LOGGER.debug(date_record)
                 if head_pattern.match(line):
-                    LOGGER.debug(f"prev: {prev_name} current: {head_name}")
+                    LOGGER.debug("prev: %s current: %s", prev_name, head_name)
                     # Storing results from earlier reading
                     try:
                         if type_name not in date_record:
@@ -189,8 +234,7 @@ def read_fun(path):
 
                     if len(block) > 0:
                         LOGGER.debug("--> Block defined")
-                        name_record[CONTENTS_NAME] = block # count_blocks(block)
-                        # exit()
+                        name_record[CONTENTS_NAME] = block
                         block = ""
 
                     # Defines the name record for the next header
@@ -231,8 +275,9 @@ def read_fun(path):
         LOGGER.error("Cannot read %s, file does not exist", path)
     # The last ENDSOL will not be included, adding that
     if head_name == "ENDSOL":
+        date_record[type_name][head_name] = {HEAD_LINE: line,
+                                             TYPE_NAME: head_type}
 
-        date_record[type_name][head_name] =  {HEAD_LINE: line, TYPE_NAME: head_type}
     # The last date record will not be stored, adding that as well
     contents[date] = date_record
     # print("returning ", contents)
@@ -253,13 +298,13 @@ def write_fun(contents, file_name="TEST.FUNRST", check_file=None):
             for data_type in contents[date]:
                 section = contents[date][data_type]
                 for header_name in section:
-                        part = section[header_name]
-                        print(header_name)
-                        print(part.keys())
-                        outhandle.write(part[HEAD_LINE])
-                        if header_name in ["STARTSOL", "ENDSOL"]:
-                            continue
-                        outhandle.write(part[CONTENTS_NAME])
+                    part = section[header_name]
+                    print(header_name)
+                    print(part.keys())
+                    outhandle.write(part[HEAD_LINE])
+                    if header_name in ["STARTSOL", "ENDSOL"]:
+                        continue
+                    outhandle.write(part[CONTENTS_NAME])
     LOGGER.info("Written %s", file_name)
     if check_file is not None:
 
@@ -280,7 +325,9 @@ def convert_restart(restart_path, background=False):
 
         suffix = ".UNRST"
 
-    out_path = str(unrst_path.absolute().parent) + "/" + unrst_path.stem + suffix
+    out_path = (
+        str(unrst_path.absolute().parent) + "/" + unrst_path.stem + suffix
+    )
     command = ["convert.x", restart_path]
     LOGGER.debug(command)
     process = Popen(command, stdout=PIPE,
