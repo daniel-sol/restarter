@@ -20,7 +20,44 @@ CONTENTS_NAME = "Contents"
 TYPE_NAME = "type"
 
 
-def parse_intehead(inte_string):
+def find_nums(string):
+    """Find numerical values inside of a text string
+    args
+    string (str): the string to interrogate
+    returns (nums):
+
+    """
+    # Finding all number like, including - sign,
+    # and E or e for scentific numbers
+    nums =   [num.strip() for num in re.findall(r"[0-9\.-eE]+\s+", string)
+              if num.strip() not in ["E", "e", "-"]]
+    return nums
+
+
+def change_date_intehead(header, new_date):
+    """changes the date in the header of intehead
+    args:
+    header (str): the header
+    new_date (str): the new date in iso.. format
+    returns new_header (str): The new header
+    """
+    head_array = string_to_nums(header, False)
+    if new_date.startswith("@"):
+        new_date = new_date[1:]
+    try:
+        year, mon, day = new_date.split("-")
+    except ValueError:
+        LOGGER.error("Wrong string supplied")
+    head_array[11, 0] = int(year)
+    head_array[10, 4] = f"{int(mon):02d}"
+    head_array[10, 5] = f"{int(day):02d}"
+
+    LOGGER.debug(head_array)
+    new_header = nums_to_string(head_array)
+    return new_header
+
+
+def find_date(inte_string):
     """parses the string containing intehead
     args:
     inte_string (str): string containing the intehead
@@ -37,7 +74,7 @@ def parse_intehead(inte_string):
     LOGGER.debug(year_part)
     day_part = re.search(r"\d+\s+\d{1,2}\s*$", parts[10] ).group(0).split()
     LOGGER.debug(day_part)
-    return_date = f"@{year_part}-{day_part[0]}-{day_part[1]}"
+    return_date = f"@{year_part}-{int(day_part[0]):02d}-{int(day_part[1]):02d}"
     return return_date
 
 
@@ -55,10 +92,8 @@ def read_grdecl(path):
     LOGGER.debug(strings)
     name = strings.pop()
 
-    numbers = pd.Series(
-        [num.strip() for num in re.findall(r"[0-9\.]+\s+", contents)],
-        name=name
-    )
+    numbers = pd.Series(find_nums(contents), name=name)
+
     return numbers
 
 
@@ -86,17 +121,21 @@ def add_contents(contents, type_name, name, text):
     contents[type_name][name].append(text)
 
 
-def string_to_nums(string, cont):
+def string_to_nums(string, cont, template_string=None):
     """Converts string to numpy array
        args:
        string (str): string to convert
        cont (bool): decides if array is continuous or discrete
+       template_string (str): other string to use in reshaping of string
        returns arr (numy array): the string as an array
     """
     types = {True: np.float32, False: np.int32}
     dtype = types[cont]
-    inv = investigate_string(string)
-    arr = np.array(re.findall(r"[0-9\.]+", string), dtype=dtype)
+
+    if template_string is None:
+        template_string = string
+    inv = investigate_string(template_string)
+    arr = np.array(find_nums(string), dtype=dtype)
     missing = np.empty(inv["missing_count"], dtype=dtype)
     if cont:
         missing[:] = np.nan
@@ -124,7 +163,7 @@ def investigate_string(string):
     rows = string.strip().split("\n")
     investigation = {}
 
-    investigation["number_count"] = len(re.findall(r"[0-9\.]+", string))
+    investigation["number_count"] = len(find_nums(string))
 
     investigation["row_count"] = len(rows)
     investigation["col_count"] = len(rows[0].strip().split())
@@ -232,7 +271,7 @@ def read_fun(path):
                         LOGGER.debug("Date record is not initialized properly")
 
                     if prev_name == "INTEHEAD":
-                        date = parse_intehead(block)
+                        date = find_date(block)
                         # LOGGER.debug(date_record)
 
                     if len(block) > 0:

@@ -17,10 +17,10 @@ def test_investigate_string():
     print(new_string)
 
 
-def test_read_grdecl(path="../../../../rms/output/pressure.grdecl"):
+def test_read_grdecl(path="test_data/pressure.grdecl"):
     """Checks reading of grdecl file
     args:
-    path (str): path to grdec file
+    path (str): path to grdecl file
     """
     out = helpers.read_grdecl(path)
     print(out)
@@ -28,6 +28,23 @@ def test_read_grdecl(path="../../../../rms/output/pressure.grdecl"):
     # print(outdict)
 
 
+def test_change_intehead(path="test_data/inteheader.txt"):
+    """tests changing the inteheader
+    args:
+    path (str): path to inteheader file
+    """
+    with open(path, "r") as inhandle:
+        header = inhandle.read()
+
+    print(header)
+    test_date = "@2022-09-01"
+    changed_header = helpers.change_date_intehead(header, "2022-09-01")
+    new_date = helpers.find_date(changed_header)
+    print(f"{test_date} vs {new_date}")
+    assert new_date == test_date, "dates are not identical"
+
+
 if __name__ == "__main__":
-    test_read_grdecl()
+    # test_read_grdecl()
+    test_change_intehead()
     # test_investigate_string()
