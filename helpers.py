@@ -1,5 +1,6 @@
 """ Helper functions for reading/modifying and storing restart files"""
 import logging
+from multiprocessing.sharedctypes import Value
 import re
 import time
 from collections import OrderedDict
@@ -7,6 +8,7 @@ from subprocess import Popen, PIPE, CalledProcessError
 from pathlib import Path
 import numpy as np
 import pandas as pd
+from sqlalchemy import true
 # from ecl2df import grid, EclFiles
 
 
@@ -20,6 +22,108 @@ CONTENTS_NAME = "Contents"
 TYPE_NAME = "type"
 
 
+def truncate_num_string(string, cont, **kwargs):
+    """Truncates numbers in a string
+    args:
+    string (str): the string to truncate
+    cont (bool): defines whether to convert to float or int
+    returns trunc_string (str)
+    """
+    numbers = string_to_nums(string, cont)
+    LOGGER.debug(numbers)
+    valids = ["low", "high"]
+    if any([key not in valids for key in kwargs.keys()]):
+        raise KeyError(f"keyword args must be in {valids}")
+    high = kwargs.get("high", numbers.max())
+    low = kwargs.get("low", numbers.min())
+    numbers[numbers > high] = high
+    numbers[numbers < low] = low
+    LOGGER.debug("After truncation: %s", numbers)
+    trunc_string = nums_to_string(numbers)
+    LOGGER.debug("Truncated string %s", trunc_string)
+    return trunc_string
+
+def ensure_steps(restart, steps):
+    """options for steps in restart dict
+    returns correct steps
+    """
+
+
+def ensure_steps(restart, input):
+    """Converts string to list if not list"""
+    all_keys = restart.keys()
+    if input is None:
+        prelim = all_keys
+
+    elif isinstance(output, str):
+        prelim = [input]
+
+    output = []
+    for step in prelim:
+        if step in all_keys:
+            output.append(step)
+        else:
+            LOGGER.warning(f"{step} not valid")
+    if len(output) == 0:
+        raise KeyError(f"No valid steps given")
+
+    return output
+
+
+def replace_with_grdecl(restart, name, grdecl_path, steps=None, **kwargs):
+    """Replaces certain property in restart dictionary with contents of grdecl
+        args:
+    restart (dict, typically from read_fun): the dictionary to work on
+    name (str): name of property to truncate
+    grdec_path (str): path to grdecl file
+    steps (list or string): time steps to use, these must be in iso .. format
+    kwargs (dict): the options, valid ones are decided by truncate_num_string
+    """
+    steps = ensure_steps(restart, steps)
+    for step in steps:
+        step_solutions = restart[step]["solutions"]
+        nums = string_to_nums(read_grdecl(grdecl_path).to_string(index=False),
+                              not "INTE" in step_solutions[name][HEAD_LINE],
+                               step_solutions[name][CONTENTS_NAME])
+
+        step_solutions[name][CONTENTS_NAME] = nums_to_string(nums)
+
+
+def truncate_numerical(restart, name, steps=None, **kwargs):
+    """Truncates certain property in restart dictionary
+    args:
+    restart (dict, typically from read_fun): the dictionary to work on
+    name (str): name of property to truncate
+    steps (list or string): time steps to use, these must be in iso .. format
+    kwargs (dict): the options, valid ones are decided by truncate_num_string
+    """
+    steps = ensure_steps(steps)
+
+    for step in steps:
+        step_solutions = restart[step]["solutions"]
+        step_solutions[name][CONTENTS_NAME] = truncate_num_string(
+                step_solutions[name][CONTENTS_NAME],
+                not "INTE" in step_solutions[name][HEAD_LINE],
+                **kwargs
+        )
+
+    return restart
+
+
+def convertable(string):
+    """Checks if string is convertable to number
+    args:
+    string (str): to check
+    returns check (bool): if True it can be converted"""
+
+    check = True
+    try:
+        float(string.strip())
+    except ValueError:
+        check = False
+    return check
+
+
 def find_nums(string):
     """Find numerical values inside of a text string
     args
@@ -29,8 +133,12 @@ def find_nums(string):
     """
     # Finding all number like, including - sign,
     # and E or e for scentific numbers
-    nums =   [num.strip() for num in re.findall(r"[0-9\.-eE]+\s+", string)
-              if num.strip() not in ["E", "e", "-"]]
+    LOGGER.debug(string)
+    # nums =   [num.strip() for num in re.findall(r"[\+0-9\.-eE]+\s+", string)
+    nums =   [num.strip() for num in re.findall(r"-?[0-9\.]+[^\s]\s", string)
+              # if these are on their own, they are not numbers
+              if convertable(num)]
+    LOGGER.debug(nums)
     return nums
 
 
@@ -108,19 +216,6 @@ def split_head(line):
     return parts
 
 
-def add_contents(contents, type_name, name, text):
-    """Adds to the main dictionary,
-    args:
-        content (dict): the main dictionary
-        type_name (str): name of one of the dictionaries of dict
-        name (str): name of one of the keys in the dict of dict named type_name
-        text (str): text string to be stored as value corresponding to name
-    """
-    if name not in contents[type_name]:
-        contents[type_name][name] = []
-    contents[type_name][name].append(text)
-
-
 def string_to_nums(string, cont, template_string=None):
     """Converts string to numpy array
        args:
@@ -136,6 +231,12 @@ def string_to_nums(string, cont, template_string=None):
         template_string = string
     inv = investigate_string(template_string)
     arr = np.array(find_nums(string), dtype=dtype)
+    if inv["number_count"] != arr.size:
+        raise ValueError(
+            f"The string is after conversion {arr.size} long, " +
+            f"but should be {inv['number_count']}"
+            )
+
     missing = np.empty(inv["missing_count"], dtype=dtype)
     if cont:
         missing[:] = np.nan

@@ -17,7 +17,7 @@ def test_investigate_string():
     print(new_string)
 
 
-def test_read_grdecl(path="test_data/pressure.grdecl"):
+def test_read_grdecl(path="test_data/short_pressure.grdecl"):
     """Checks reading of grdecl file
     args:
     path (str): path to grdecl file
@@ -44,7 +44,18 @@ def test_change_intehead(path="test_data/inteheader.txt"):
     assert new_date == test_date, "dates are not identical"
 
 
+def test_truncate_str(path="test_data/pressure.txt"):
+    """test truncation of numbers in a string
+    args:
+    path (str): path to inteheader file
+    """
+    with open(path, "r") as inhandle:
+        num_string = inhandle.read()
+    helpers.truncate_num_string(num_string, True, high=300)
+
+
 if __name__ == "__main__":
-    # test_read_grdecl()
-    test_change_intehead()
+    test_read_grdecl()
+    # test_change_intehead()
     # test_investigate_string()
+    # test_truncate_str()
