@@ -1,14 +1,13 @@
 """ Helper functions for reading/modifying and storing restart files"""
 import logging
-from multiprocessing.sharedctypes import Value
 import re
 import time
+import operator
 from collections import OrderedDict
 from subprocess import Popen, PIPE, CalledProcessError
 from pathlib import Path
 import numpy as np
 import pandas as pd
-from sqlalchemy import true
 # from ecl2df import grid, EclFiles
 
 
@@ -30,42 +29,40 @@ def truncate_num_string(string, cont, **kwargs):
     returns trunc_string (str)
     """
     numbers = string_to_nums(string, cont)
-    LOGGER.debug(numbers)
+    LOGGER.debug("Truncating a string of length %s", numbers.size)
     valids = ["low", "high"]
-    if any([key not in valids for key in kwargs.keys()]):
-        raise KeyError(f"keyword args must be in {valids}")
+    if any([key not in valids for key in kwargs]):
+        raise KeyError("keyword args must be in ", valids)
     high = kwargs.get("high", numbers.max())
     low = kwargs.get("low", numbers.min())
     numbers[numbers > high] = high
     numbers[numbers < low] = low
-    LOGGER.debug("After truncation: %s", numbers)
+    LOGGER.debug("After truncation: min: %s, max: %s", numbers.min(), numbers.max())
     trunc_string = nums_to_string(numbers)
-    LOGGER.debug("Truncated string %s", trunc_string)
+    # LOGGER.debug("Truncated string %s", trunc_string)
     return trunc_string
 
-def ensure_steps(restart, steps):
-    """options for steps in restart dict
-    returns correct steps
-    """
 
-
-def ensure_steps(restart, input):
+def ensure_steps(restart, insteps):
     """Converts string to list if not list"""
     all_keys = restart.keys()
-    if input is None:
-        prelim = all_keys
+    if insteps is None:
+        pre_steps = all_keys
 
-    elif isinstance(output, str):
-        prelim = [input]
+    elif isinstance(insteps, str):
+        pre_steps = [insteps]
+
+    else:
+        pre_steps = insteps
 
     output = []
-    for step in prelim:
+    for step in pre_steps:
         if step in all_keys:
             output.append(step)
         else:
-            LOGGER.warning(f"{step} not valid")
+            LOGGER.warning("%s not valid", step)
     if len(output) == 0:
-        raise KeyError(f"No valid steps given")
+        raise KeyError("No valid steps given")
 
     return output
 
@@ -82,10 +79,14 @@ def replace_with_grdecl(restart, name, grdecl_path, steps=None, **kwargs):
     steps = ensure_steps(restart, steps)
     for step in steps:
         step_solutions = restart[step]["solutions"]
-        nums = string_to_nums(read_grdecl(grdecl_path).to_string(index=False),
-                              not "INTE" in step_solutions[name][HEAD_LINE],
-                               step_solutions[name][CONTENTS_NAME])
 
+        nums = read_grdecl(grdecl_path)
+
+        actnum_path = kwargs.get("actnum_path", None)
+        if actnum_path is not None:
+            actnum = read_grdecl(actnum_path)
+            nums = limit_numbers(nums, 1, actnum, "==")
+        nums = reshape_nums(nums, step_solutions[name][CONTENTS_NAME])
         step_solutions[name][CONTENTS_NAME] = nums_to_string(nums)
 
 
@@ -97,13 +98,13 @@ def truncate_numerical(restart, name, steps=None, **kwargs):
     steps (list or string): time steps to use, these must be in iso .. format
     kwargs (dict): the options, valid ones are decided by truncate_num_string
     """
-    steps = ensure_steps(steps)
+    steps = ensure_steps(restart, steps)
 
     for step in steps:
         step_solutions = restart[step]["solutions"]
         step_solutions[name][CONTENTS_NAME] = truncate_num_string(
                 step_solutions[name][CONTENTS_NAME],
-                not "INTE" in step_solutions[name][HEAD_LINE],
+                "INTE" not in step_solutions[name][HEAD_LINE],
                 **kwargs
         )
 
@@ -121,6 +122,8 @@ def convertable(string):
         float(string.strip())
     except ValueError:
         check = False
+        LOGGER.debug("%s not convertable", string)
+        # exit()
     return check
 
 
@@ -131,14 +134,19 @@ def find_nums(string):
     returns (nums):
 
     """
+    # Removing comments
+    # Adding line break to ensure that the last line is included
+    # When removing comment lines
+    string += " \n"
+    num_string = "".join([part for part in string.split("\n")
+                          if not part.startswith("--")])
+
     # Finding all number like, including - sign,
     # and E or e for scentific numbers
-    LOGGER.debug(string)
-    # nums =   [num.strip() for num in re.findall(r"[\+0-9\.-eE]+\s+", string)
-    nums =   [num.strip() for num in re.findall(r"-?[0-9\.]+[^\s]\s", string)
-              # if these are on their own, they are not numbers
-              if convertable(num)]
-    LOGGER.debug(nums)
+    nums = [num.strip() for num in re.findall(r"[\+0-9\.-eE]+\s+", num_string)
+            if convertable(num)]
+    # LOGGER.debug(nums)
+    LOGGER.debug("Found %s numbers", len(nums))
     return nums
 
 
@@ -180,7 +188,7 @@ def find_date(inte_string):
 
     year_part = re.search(r"(\d{4})\s", parts[11]).group(1)
     LOGGER.debug(year_part)
-    day_part = re.search(r"\d+\s+\d{1,2}\s*$", parts[10] ).group(0).split()
+    day_part = re.search(r"\d+\s+\d{1,2}\s*$", parts[10]).group(0).split()
     LOGGER.debug(day_part)
     return_date = f"@{year_part}-{int(day_part[0]):02d}-{int(day_part[1]):02d}"
     return return_date
@@ -205,6 +213,82 @@ def read_grdecl(path):
     return numbers
 
 
+def make_selector(limiter, limit_values, oper):
+    """makes a boolean pd.Series from a set criteria"""
+
+    operators = {">": operator.gt, ">=": operator.ge,
+                 "<": operator.lt, "<=": operator.le,
+                 "==": operator.eq, "!=": operator.ne}
+
+    if not isinstance(oper, list) and oper not in operators:
+        raise TypeError(
+            f"operation needs to either be among {operators.keys()} " +
+            "or be a list",
+        )
+
+    if limiter.dtype == np.object:
+        try:
+            limit_values = [str(val) for val in limit_values]
+        except TypeError:
+            limit_values = str(limit_values)
+
+    try:
+        LOGGER.debug("Checking if values are in %s", limit_values)
+        selector = limiter.isin(limit_values)
+
+    except TypeError:
+        LOGGER.debug("Checking if values are %s %s", oper, limit_values)
+
+        selector = operators[oper](limiter, limit_values)
+
+    LOGGER.debug("Selecting %s values", selector.sum())
+
+    return selector
+
+
+def limit_numbers(nums, limit_values, limiter=None, oper=">"):
+    """cuts down the size of a pandas series
+    args:
+    nums (pd.Series): the series to limit
+    limiter (pd.Series): the series to limit with
+    limit_values (number or list of numbers)
+    """
+    if limiter is None:
+        limiter = nums.copy()
+
+    LOGGER.debug("Will limit %s", nums)
+    LOGGER.debug("Limiter is %s", limiter)
+
+    selector = make_selector(limiter, limit_values, oper)
+    output = nums.loc[selector]
+
+    LOGGER.debug("After limiting size went from %s to %s", nums.size, output.size)
+
+    if output.size == nums.size:
+        LOGGER.warning("No reduction happened!")
+
+    return output
+
+
+def replace_numbers(nums, replace_values, replacement, replacer=None, oper=">"):
+    """swaps the numbers in a pandas series
+    args:
+    nums (pd.Series): the series to limit
+    replacer (pd.Series): the series to limit with
+    replace_values (number or list of numbers)
+    """
+
+    if replacer is None:
+        replacer = nums.copy()
+
+    selection = make_selector(replacer, replace_values, oper)
+
+    LOGGER.debug("Replacing %s values", selection.sum())
+    nums[selection] = replacement[selection]
+
+    return nums
+
+
 def split_head(line):
     """Splits header line into components
     args:
@@ -214,6 +298,36 @@ def split_head(line):
     parts = line.replace("'", "").strip().split()
     LOGGER.debug(parts)
     return parts
+
+
+def reshape_nums(nums, template_string):
+    """Reshapes nums to with template string
+    args:
+    nums (np.array):
+    returns reshaped (np.array): the array reshaped
+    """
+    inv = investigate_string(template_string)
+    if inv["number_count"] != nums.size:
+        raise ValueError(
+            f"The string is before conversion {nums.size} long, " +
+            f"but should be {inv['number_count']}"
+            )
+
+    missing = np.empty(inv["missing_count"], dtype=nums.dtype)
+    cont = nums.dtype == np.float32
+    LOGGER.debug("Trickery with missing")
+    if cont:
+        LOGGER.debug("Continuous option")
+        missing[:] = np.nan
+    else:
+        LOGGER.debug("Discrete option")
+        nums = pd.DataFrame(nums).astype(str).values
+        missing = pd.DataFrame(missing).astype(str).values
+        missing[:] = ""
+    LOGGER.debug("Reshaping")
+    reshaped = np.concatenate((nums, missing)).reshape(inv["row_count"],
+                                                       inv["col_count"])
+    return reshaped
 
 
 def string_to_nums(string, cont, template_string=None):
@@ -229,19 +343,8 @@ def string_to_nums(string, cont, template_string=None):
 
     if template_string is None:
         template_string = string
-    inv = investigate_string(template_string)
     arr = np.array(find_nums(string), dtype=dtype)
-    if inv["number_count"] != arr.size:
-        raise ValueError(
-            f"The string is after conversion {arr.size} long, " +
-            f"but should be {inv['number_count']}"
-            )
 
-    missing = np.empty(inv["missing_count"], dtype=dtype)
-    if cont:
-        missing[:] = np.nan
-    arr = np.concatenate((arr, missing)).reshape(inv["row_count"],
-                                                 inv["col_count"])
     return arr
 
 
@@ -252,6 +355,8 @@ def nums_to_string(array):
     return string (str): string from array"""
     string = pd.DataFrame(array).to_string(header=False, index=False,
                                            na_rep="")
+    if not string.endswith("\n"):
+        string += "\n"
     return string
 
 
@@ -285,6 +390,7 @@ def investigate_string(string):
         LOGGER.info("Everything fine")
 
     LOGGER.debug(investigation)
+    # exit()
     return investigation
 
 
