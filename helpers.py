@@ -1,6 +1,7 @@
 """ Helper functions for reading/modifying and storing restart files"""
 import logging
 import re
+from datetime import datetime, timedelta
 import time
 import operator
 from collections import OrderedDict
@@ -73,7 +74,7 @@ def replace_with_grdecl(restart, name, grdecl_path, steps=None, **kwargs):
     restart (dict, typically from read_fun): the dictionary to work on
     name (str): name of property to truncate
     grdec_path (str): path to grdecl file
-    steps (list or string): time steps to use, these must be in iso .. format
+    steps (list or string): time steps to use, these must be in iso-8601 format
     kwargs (dict): the options, valid ones are decided by truncate_num_string
     """
     steps = ensure_steps(restart, steps)
@@ -91,7 +92,7 @@ def replace_with_grdecl(restart, name, grdecl_path, steps=None, **kwargs):
 
 
 def partial_replace_with_grdecl(restart, name, grdecl_path, replacer_path,
-                                replacement_path, oper, steps=None, **kwargs):
+                                replacement, oper, steps=None, **kwargs):
     """Replaces certain property in restart dictionary with contents of grdecl
         args:
     restart (dict, typically from read_fun): the dictionary to work on
@@ -99,7 +100,7 @@ def partial_replace_with_grdecl(restart, name, grdecl_path, replacer_path,
     grdecl_path (str): path to grdecl file
     replacer_path (str): path to grdecl file that will be used as filter
     oper (str or list): controls what operation to perform when replacing
-    steps (list or string): time steps to use, these must be in iso .. format
+    steps (list or string): time steps to use, these must be in iso-8601 format
     kwargs (dict): the options, valid ones are decided by truncate_num_string
     """
     steps = ensure_steps(restart, steps)
@@ -124,7 +125,7 @@ def truncate_numerical(restart, name, steps=None, **kwargs):
     args:
     restart (dict, typically from read_fun): the dictionary to work on
     name (str): name of property to truncate
-    steps (list or string): time steps to use, these must be in iso .. format
+    steps (list or string): time steps to use, these must be in iso-8601 format
     kwargs (dict): the options, valid ones are decided by truncate_num_string
     """
     steps = ensure_steps(restart, steps)
@@ -179,14 +180,37 @@ def find_nums(string):
     return nums
 
 
+def insert_initial_step(restart, subtract_days):
+    """Inserts a step at start of restart file
+    args:
+    restart (dict, typically from read_fun): the dictionary to work on
+    subtract_days (int): number of days to subtract
+    """
+    exist_step = list(restart.keys())[0]
+    dateformat = "%Y-%M-%d"
+    date = datetime.strptime(exist_step, dateformat)
+    earlier_date = date - timedelta(days=subtract_days)
+    insert_step = datetime.strftime(earlier_date, dateformat)
+    print(f"Will insert {insert_step}")
+    time.sleep(2)
+
+    restart[insert_step] = restart[exist_step]
+    restart[insert_step]["headers"]["INTEHEAD"] = change_date_intehead(
+      restart[insert_step]["headers"]["INTEHEAD"], insert_step
+    )
+    assert find_date(restart[insert_step]["headers"]["INTEHEAD"]) == insert_step
+    restart.move_to_end(insert_step, last=False)
+
+
 def change_date_intehead(header, new_date):
     """changes the date in the header of intehead
     args:
     header (str): the header
-    new_date (str): the new date in iso.. format
+    new_date (str): the new date in iso-8601 format
     returns new_header (str): The new header
     """
-    head_array = string_to_nums(header, False)
+    head_array = reshape_nums(string_to_nums(header, False), header)
+    LOGGER.debug(head_array.shape)
     if new_date.startswith("@"):
         new_date = new_date[1:]
     try:
@@ -219,7 +243,7 @@ def find_date(inte_string):
     LOGGER.debug(year_part)
     day_part = re.search(r"\d+\s+\d{1,2}\s*$", parts[10]).group(0).split()
     LOGGER.debug(day_part)
-    return_date = f"@{year_part}-{int(day_part[0]):02d}-{int(day_part[1]):02d}"
+    return_date = f"{year_part}-{int(day_part[0]):02d}-{int(day_part[1]):02d}"
     return return_date
 
 

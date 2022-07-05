@@ -95,10 +95,12 @@ def test_change_intehead(path="test_data/inteheader.txt"):
         header = inhandle.read()
 
     print(header)
-    test_date = "@2022-09-01"
+    test_date = "2022-09-01"
+    org_date = helpers.find_date(header)
+    print(f" org date : {org_date}")
     changed_header = helpers.change_date_intehead(header, "2022-09-01")
     new_date = helpers.find_date(changed_header)
-    print(f"{test_date} vs {new_date}")
+    print(f"original date {org_date}: changed to {new_date} vs {test_date}")
     assert new_date == test_date, "dates are not identical"
 
 
@@ -176,10 +178,10 @@ def test_replace_with_list(pressure_property):
 
 
 if __name__ == "__main__":
-    test_replace_with_list()
+    # test_replace_with_list()
     #test_limit_numbers()
     #time.sleep(1)
     # test_read_grdecl()
-    # test_change_intehead()
+    test_change_intehead()
     # test_investigate_string()
     # test_truncate_str()
