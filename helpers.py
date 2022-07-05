@@ -90,6 +90,35 @@ def replace_with_grdecl(restart, name, grdecl_path, steps=None, **kwargs):
         step_solutions[name][CONTENTS_NAME] = nums_to_string(nums)
 
 
+def partial_replace_with_grdecl(restart, name, grdecl_path, replacer_path,
+                                replacement_path, oper, steps=None, **kwargs):
+    """Replaces certain property in restart dictionary with contents of grdecl
+        args:
+    restart (dict, typically from read_fun): the dictionary to work on
+    name (str): name of property to truncate
+    grdecl_path (str): path to grdecl file
+    replacer_path (str): path to grdecl file that will be used as filter
+    oper (str or list): controls what operation to perform when replacing
+    steps (list or string): time steps to use, these must be in iso .. format
+    kwargs (dict): the options, valid ones are decided by truncate_num_string
+    """
+    steps = ensure_steps(restart, steps)
+    for step in steps:
+        step_solutions = restart[step]["solutions"]
+
+        org = pd.Series(find_nums(step_solutions[name][CONTENTS_NAME]))
+        nums = read_grdecl(grdecl_path)
+        replacer = read_grdecl(replacer_path)
+        actnum_path = kwargs.get("actnum_path", None)
+        if actnum_path is not None:
+            actnum = read_grdecl(actnum_path)
+            nums = limit_numbers(nums, 1, actnum, "==")
+            replacer = limit_numbers(replacer, 1, actnum, "==")
+        nums = replace_numbers(org, oper, replacement, replacer)
+        nums = reshape_nums(nums, step_solutions[name][CONTENTS_NAME])
+        step_solutions[name][CONTENTS_NAME] = nums_to_string(nums)
+
+
 def truncate_numerical(restart, name, steps=None, **kwargs):
     """Truncates certain property in restart dictionary
     args:
@@ -209,7 +238,8 @@ def read_grdecl(path):
     name = strings.pop()
 
     numbers = pd.Series(find_nums(contents), name=name)
-
+    LOGGER.debug("Returning series of lengt %s", numbers.size)
+    LOGGER.debug(numbers.head())
     return numbers
 
 
@@ -241,7 +271,7 @@ def make_selector(limiter, limit_values, oper):
 
         selector = operators[oper](limiter, limit_values)
 
-    LOGGER.debug("Selecting %s values", selector.sum())
+    LOGGER.debug("Selector has %s values", selector.sum())
 
     return selector
 
@@ -277,16 +307,16 @@ def replace_numbers(nums, replace_values, replacement, replacer=None, oper=">"):
     replacer (pd.Series): the series to limit with
     replace_values (number or list of numbers)
     """
-
+    out = nums.copy()
     if replacer is None:
         replacer = nums.copy()
 
     selection = make_selector(replacer, replace_values, oper)
 
     LOGGER.debug("Replacing %s values", selection.sum())
-    nums[selection] = replacement[selection]
+    out.values[selection] = replacement.values[selection]
 
-    return nums
+    return out
 
 
 def split_head(line):

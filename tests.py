@@ -1,56 +1,86 @@
 """Tests for restarter"""
+from hashlib import new
+from operator import ne
+import pytest
 import numpy as np
 import helpers
 
-
-def test_investigate_string():
-    """Tests investigation of string"""
+@pytest.fixture
+def return_string():
+    "Returns the test string"
     string = " 1 2 3\n 4 5 6\n 7 8 9\n 10 11\n"
-    print(string)
-    print(helpers.investigate_string(string))
-    array = helpers.string_to_nums(string, True)
-    assert array.size == 12, "Size is wrong"
-    print(array)
-    assert array.dtype == np.float32, "Cont type not good"
-    # array = helpers.string_to_nums(string, False)
-    # assert array.dtype == np.int32, "Disc type is good"
-    new_string = helpers.nums_to_string(array)
-    assert isinstance(new_string, str)
-    print(new_string)
+    print(f"This is the string\n {string}")
+    return string
 
 
-def test_read_grdecl(path="test_data/pressure.grdecl"):
-    """Checks reading of grdecl file
-    """
-    out = helpers.read_grdecl(path)
-    name = out.name
-    size = out.size
-
-    assert name == "Hydrostatic", f"Name is wrong is {name}, should be Hydrostatic"
-    assert size == 770500, f"Wrong size of cont is {size}, should be 770500"
-    # print(outdict)
-    return out
+@pytest.fixture
+def pressure_property(path="test_data/pressure.grdecl"):
+    "Reads property, used in tests below"
+    return helpers.read_grdecl(path)
 
 
-def test_read_disc_grdecl(path="test_data/actnum.grdecl"):
+@pytest.fixture
+def actnum_property(path="test_data/actnum.grdecl"):
     """Checks reading of grdecl file
     args:
     path (str): path to grdecl file
     """
-    out = helpers.read_grdecl(path)
-    print(out)
-    name = out.name
-    size = out.size
+    return helpers.read_grdecl(path)
+
+
+def test_investigate_string(return_string):
+    """Tests investigation of string"""
+    investigation = helpers.investigate_string(return_string)
+    print(f"Investigation returns {investigation}")
+    assert investigation["number_count"] == 11, "Wrong number count"
+    assert investigation["row_count"] == 4, "Wrong row count"
+    assert investigation["col_count"] == 3, "Wrong col count"
+    assert investigation["complete_square_count"] == 12, "Wrong square count"
+    assert investigation["last_count"] == 2, "Wrong last count"
+    assert investigation["missing_count"] == 1, "Wrong missing count"
+    assert investigation["missing_check"] == 1, "Wrong missing check"
+
+
+def test_string_to_nums(return_string):
+    " Tests conversion of string to numbers"
+    array = helpers.string_to_nums(return_string, True)
+    assert array.sum() == 66, "Sum is not correct"
+    assert array.size == 11, "Size is wrong"
+    print(array)
+    assert array.dtype == np.float32, "Cont type not good"
+    array = helpers.string_to_nums(return_string, False)
+    assert array.dtype == np.int32, "Disc type not good"
+    new_string = helpers.nums_to_string(array)
+
+    assert isinstance(new_string, str), "String not returned"
+    print(new_string)
+
+
+def test_read_grdecl(pressure_property):
+    """Checks reading of grdecl file
+    """
+    name = pressure_property.name
+    size = pressure_property.size
+
+    assert name == "Hydrostatic", f"Name is wrong is {name}, should be Hydrostatic"
+    assert size == 770500, f"Wrong size of cont is {size}, should be 770500"
+
+
+def test_read_disc_grdecl(actnum_property):
+    """Checks reading of grdecl file
+    args:
+    path (str): path to grdecl file
+    """
+    name = actnum_property.name
+    size = actnum_property.size
     assert name == "ACTNUM", f"Name is wrong is{name}, should be ACTNUM"
     assert size == 770500, f"Wrong size of disc is {size}, should be 770500"
     # assert out.dtype = ""
-    return out
 
 
-def test_limit_numbers():
-    prop = test_read_grdecl()
-    disc = test_read_disc_grdecl()
-    limited = helpers.limit_numbers(prop, 1, disc, oper="==")
+def test_limit_numbers(pressure_property, actnum_property):
+    """Testing limiting numbers"""
+    limited = helpers.limit_numbers(pressure_property, 1, actnum_property, oper="==")
     size = limited.size
     assert size == 600800, f"Wrong size of disc is {size}, should be 600800"
     return limited
@@ -109,25 +139,44 @@ def test_truncate_str(path="test_data/pressure.txt"):
     """
     with open(path, "r") as inhandle:
         num_string = inhandle.read()
-    helpers.truncate_num_string(num_string, True, high=300)
+    truncated = helpers.find_nums(helpers.truncate_num_string(num_string, True, high=300, low=100))
+    print()
+    assert truncated.max() <= 300
+    assert truncated.min() >= 100
 
 
-def test_replace_with_list():
+def test_replace_with_list(pressure_property):
     """Tests replacing part of the contents of a grdecl file"""
-    press_path = "test_data/pressure.grdecl"
-    swl_path = "test_data/pressure.grdecl"
+    swl_path = "test_data/swl.grdecl"
     zone_path = "test_data/FIPZONE.grdecl"
-    pressure = helpers.read_grdecl(press_path)
     zones = helpers.read_grdecl(zone_path)
     swl = helpers.read_grdecl(swl_path)
-    new_pressure = helpers.replace_numbers(pressure, [1, 2, 3, 4], swl,
-                                           zones)
 
-    assert not new_pressure.equals(pressure), "The two series are the same, they should not be"
+    # selection = zones.isin(["1", "2", "3", "4"])
+    # new_pressure = pressure_property.copy()
+    # print(pressure_property[selection].sum())
+    # print(swl[selection].sum())
+    # assert selection.size == new_pressure.size, "Selection not equal in size to pressure"
+    # assert selection.sum() > 0, "Empty selection, something is wrong"
+    # assert new_pressure.size == swl.size, "Pressure not equal in size to swl"
+    assert pressure_property.astype(float).sum() != swl.astype(float).sum(), "Pressure and swl have the same sum, something is wrong"
+    # new_pressure.values[selection] = swl.values[selection]
+
+    print(swl.head())
+    print(pressure_property.head())
+    new_pressure = helpers.replace_numbers(pressure_property, [1, 2, 3, 4], swl,
+                                           zones)
+    pressure_property = pressure_property.astype(float)
+    new_pressure = new_pressure.astype(float)
     print(new_pressure.head())
+    print(pressure_property.sum())
+    print(new_pressure.sum())
+    assert pressure_property.sum() != new_pressure.sum(), "Sums are equal they should not be"
+    assert ~(not new_pressure.equals(pressure_property)), "The two series are the same, they should not be"
+
 
 if __name__ == "__main__":
-    test_read_scientific_string()
+    test_replace_with_list()
     #test_limit_numbers()
     #time.sleep(1)
     # test_read_grdecl()
