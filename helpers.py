@@ -1,6 +1,7 @@
 """ Helper functions for reading/modifying and storing restart files"""
 import logging
 import re
+import copy
 from datetime import datetime, timedelta
 import time
 import operator
@@ -191,15 +192,20 @@ def insert_initial_step(restart, subtract_days):
     date = datetime.strptime(exist_step, dateformat)
     earlier_date = date - timedelta(days=subtract_days)
     insert_step = datetime.strftime(earlier_date, dateformat)
+    LOGGER.debug(f"Creating step {exist_step} from {exist_step} ")
     print(f"Will insert {insert_step}")
     time.sleep(2)
 
-    restart[insert_step] = restart[exist_step]
-    restart[insert_step]["headers"]["INTEHEAD"] = change_date_intehead(
-      restart[insert_step]["headers"]["INTEHEAD"], insert_step
+    restart[insert_step] = copy.deepcopy(restart[exist_step])
+    restart[insert_step]["headers"]["INTEHEAD"]["Contents"] = change_date_intehead(
+      restart[insert_step]["headers"]["INTEHEAD"]["Contents"], insert_step
     )
-    assert find_date(restart[insert_step]["headers"]["INTEHEAD"]) == insert_step
+    # restart[exist_step]["headers"]["INTEHEAD"]["Contents"] = "mu"
     restart.move_to_end(insert_step, last=False)
+    steps = list(restart.keys())
+    LOGGER.debug(steps)
+    time.sleep(3)
+    assert steps[0] != steps[1], "Have not managed to insert a unique new step"
 
 
 def change_date_intehead(header, new_date):
@@ -218,8 +224,8 @@ def change_date_intehead(header, new_date):
     except ValueError:
         LOGGER.error("Wrong string supplied")
     head_array[11, 0] = int(year)
-    head_array[10, 4] = f"{int(mon):02d}"
-    head_array[10, 5] = f"{int(day):02d}"
+    head_array[10, 5] = int(mon)
+    head_array[10, 4] = int(day)
 
     LOGGER.debug(head_array)
     new_header = nums_to_string(head_array)
@@ -234,16 +240,11 @@ def find_date(inte_string):
     """
     LOGGER.debug("What to parse:")
     LOGGER.debug(inte_string)
-    parts = re.findall(r".*\n", inte_string)
-    LOGGER.debug(parts)
-    LOGGER.debug(parts[11])
-    LOGGER.debug(parts[10])
-
-    year_part = re.search(r"(\d{4})\s", parts[11]).group(1)
-    LOGGER.debug(year_part)
-    day_part = re.search(r"\d+\s+\d{1,2}\s*$", parts[10]).group(0).split()
-    LOGGER.debug(day_part)
-    return_date = f"{year_part}-{int(day_part[0]):02d}-{int(day_part[1]):02d}"
+    head_array = reshape_nums(string_to_nums(inte_string, False), inte_string)
+    year = int(head_array[11, 0])
+    mon = int(head_array[10, 5])
+    day = int(head_array[10, 4])
+    return_date = f"{year}-{mon:02d}-{day:02d}"
     return return_date
 
 
@@ -502,7 +503,8 @@ def read_fun(path):
     prev_name = None
     head_name = None
     discrete = False
-
+    # date_record = {}
+    name_record = {}
     try:
         with open(path, "r") as funhandle:
             LOGGER.debug("Opening the show")

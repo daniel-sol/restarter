@@ -177,11 +177,40 @@ def test_replace_with_list(pressure_property):
     assert ~(not new_pressure.equals(pressure_property)), "The two series are the same, they should not be"
 
 
+def test_insert_initial_step(fun_file="test_data/small.FUNRST"):
+    """Tests the insertion of timestep in a funrst file"""
+    contents = helpers.read_fun(fun_file)
+    correct_date = "2010-01-30"
+    assert len(contents.keys()) == 1, "More than one step initially"
+    helpers.insert_initial_step(contents, 1)
+    steps_after = list(contents.keys())
+    assert len(steps_after) == 2, "Another step not added in dictionary"
+    assert steps_after[0] != steps_after[1], "The steps are identical, they should not be"
+    first_date = helpers.find_date(contents[steps_after[0]]["headers"]["INTEHEAD"]["Contents"])
+    second_date = helpers.find_date(contents[steps_after[1]]["headers"]["INTEHEAD"]["Contents"])
+    assert first_date != second_date, f"Identical dates, and date is {first_date}"
+
+
+    check_path = "test_data/TEST.FUNRST"
+    helpers.write_fun(contents, check_path)
+    made_contents = helpers.read_fun(check_path)
+    steps = list(made_contents.keys())
+    assert len(steps) == 2, "Another step not added in written file"
+    first_step = steps[0]
+    second_step = steps[1]
+    inteheader = made_contents[first_step]["headers"]["INTEHEAD"]["Contents"]
+    inteheader_date = helpers.find_date(inteheader)
+    assert first_step == correct_date, f"Wrong step date {first_step} vs {correct_date}"
+    assert inteheader_date == correct_date, f"Wrong head date {inteheader_date} vs {correct_date}"
+    assert first_step != second_step, "Steps are identical, they shouldn't be"
+
+
 if __name__ == "__main__":
     # test_replace_with_list()
     #test_limit_numbers()
     #time.sleep(1)
     # test_read_grdecl()
-    test_change_intehead()
+    # test_change_intehead()
+    test_insert_initial_step()
     # test_investigate_string()
     # test_truncate_str()
