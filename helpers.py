@@ -46,30 +46,53 @@ def truncate_num_string(string, cont, **kwargs):
 
 
 def ensure_steps(restart, insteps):
-    """Converts string to list if not list"""
+    """Checks and sort out steps for input to other functions
+    args:
+    restart (dict, typically from read_fun): the dictionary to work on
+    insteps (string, int or list): valid string are either first, last or iso-8601 format
+
+                               entries in list must be iso-8601 format
+    """
     all_keys = restart.keys()
-    if insteps is None:
-        pre_steps = all_keys
+    key_list = list(all_keys)
+    try:
+        pre_steps = key_list[insteps]
 
-    elif isinstance(insteps, str):
-        pre_steps = [insteps]
+    except KeyError:
 
-    else:
-        pre_steps = insteps
+        if isinstance(insteps, str):
 
-    output = []
+            LOGGER.info("Fetching step %s", insteps)
+            if insteps == "all":
+
+                 pre_steps = all_keys
+
+            if insteps == "first":
+
+                insteps = key_list[0]
+
+            if insteps == "last":
+                insteps = key_list[-1]
+
+            pre_steps = [insteps]
+
+        else:
+            LOGGER.info("Fetching steps %s", steps)
+            pre_steps = insteps
+
+    outsteps = []
     for step in pre_steps:
         if step in all_keys:
-            output.append(step)
+            outsteps.append(step)
         else:
             LOGGER.warning("%s not valid", step)
-    if len(output) == 0:
+    if len(outsteps) == 0:
         raise KeyError("No valid steps given")
 
-    return output
+    return outsteps
 
 
-def replace_with_grdecl(restart, name, grdecl_path, steps=None, **kwargs):
+def replace_with_grdecl(restart, name, grdecl_path, steps="all", **kwargs):
     """Replaces certain property in restart dictionary with contents of grdecl
         args:
     restart (dict, typically from read_fun): the dictionary to work on
@@ -93,14 +116,14 @@ def replace_with_grdecl(restart, name, grdecl_path, steps=None, **kwargs):
 
 
 def partial_replace_with_grdecl(restart, name, grdecl_path, replacer_path,
-                                replacement, oper, steps=None, **kwargs):
+                                oper, steps="all", **kwargs):
     """Replaces certain property in restart dictionary with contents of grdecl
         args:
     restart (dict, typically from read_fun): the dictionary to work on
     name (str): name of property to truncate
     grdecl_path (str): path to grdecl file
     replacer_path (str): path to grdecl file that will be used as filter
-    oper (str or list): controls what operation to perform when replacing
+    oper (str or list or ): controls what operation to perform when replacing
     steps (list or string): time steps to use, these must be in iso-8601 format
     kwargs (dict): the options, valid ones are decided by truncate_num_string
     """
@@ -109,16 +132,16 @@ def partial_replace_with_grdecl(restart, name, grdecl_path, replacer_path,
         step_solutions = restart[step]["solutions"]
 
         org = pd.Series(find_nums(step_solutions[name][CONTENTS_NAME]))
-        nums = read_grdecl(grdecl_path)
+        replacement = read_grdecl(grdecl_path)
         replacer = read_grdecl(replacer_path)
         actnum_path = kwargs.get("actnum_path", None)
         if actnum_path is not None:
             actnum = read_grdecl(actnum_path)
-            nums = limit_numbers(nums, 1, actnum, "==")
+            replacement = limit_numbers(replacement, 1, actnum, "==")
             replacer = limit_numbers(replacer, 1, actnum, "==")
-        nums = replace_numbers(org, oper, replacement, replacer)
-        nums = reshape_nums(nums, step_solutions[name][CONTENTS_NAME])
-        step_solutions[name][CONTENTS_NAME] = nums_to_string(nums)
+        changed = replace_numbers(org, nums, replacer, oper)
+        changed = reshape_nums(changed, step_solutions[name][CONTENTS_NAME])
+        step_solutions[name][CONTENTS_NAME] = nums_to_string(changed)
 
 
 def truncate_numerical(restart, name, steps=None, **kwargs):
@@ -192,9 +215,7 @@ def insert_initial_step(restart, subtract_days):
     date = datetime.strptime(exist_step, dateformat)
     earlier_date = date - timedelta(days=subtract_days)
     insert_step = datetime.strftime(earlier_date, dateformat)
-    LOGGER.debug(f"Creating step {exist_step} from {exist_step} ")
-    print(f"Will insert {insert_step}")
-    time.sleep(2)
+    LOGGER.debug("Creating step %s from %s", insert_step, exist_step)
 
     restart[insert_step] = copy.deepcopy(restart[exist_step])
     restart[insert_step]["headers"]["INTEHEAD"]["Contents"] = change_date_intehead(
@@ -202,6 +223,9 @@ def insert_initial_step(restart, subtract_days):
     )
     # restart[exist_step]["headers"]["INTEHEAD"]["Contents"] = "mu"
     restart.move_to_end(insert_step, last=False)
+
+    for i, step in enumerate(restart):
+        restart[step]["headers"]["SEQNUM"]["Contents"] = f"    {i}\n"
     steps = list(restart.keys())
     LOGGER.debug(steps)
     time.sleep(3)
@@ -328,8 +352,9 @@ def limit_numbers(nums, limit_values, limiter=None, oper=">"):
 def replace_numbers(nums, replace_values, replacement, replacer=None, oper=">"):
     """swaps the numbers in a pandas series
     args:
-    nums (pd.Series): the series to limit
+    nums (pd.Series): the series to change
     replacer (pd.Series): the series to limit with
+    replacement (pd.Series): the series to replace with
     replace_values (number or list of numbers)
     """
     out = nums.copy()
@@ -584,7 +609,7 @@ def read_fun(path):
                                              TYPE_NAME: head_type}
 
     # The last date record will not be stored, adding that as well
-    contents[date] = date_record
+    # contents[date] = date_record
     # print("returning ", contents)
     return contents
 
