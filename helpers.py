@@ -10,17 +10,32 @@ from subprocess import Popen, PIPE, CalledProcessError
 from pathlib import Path
 import numpy as np
 import pandas as pd
+from xtgeo import grid_from_file
 # from ecl2df import grid, EclFiles
 
 
-logging.basicConfig()
+# logging.basicConfig()
 LOGGER = logging.getLogger(__name__)
-LOGGER.setLevel(logging.DEBUG)
-# LOGGER.addHandler(logging.NullHandler())
+# LOGGER.setLevel(logging.DEBUG)
+LOGGER.addHandler(logging.NullHandler())
 # Names to use of the keys in the contents dictionary
 HEAD_LINE = "header line"
 CONTENTS_NAME = "Contents"
 TYPE_NAME = "type"
+SOL_NAME = "solutions"
+HEAD_NAME = "headers"
+
+
+def get_grid_actnum(egrid_path):
+    """Makes an actnum that is the sum of the grid actnum, and actnum from file
+    args:
+        egrid_path (str): path to egrid
+        grdecl_path (str): path to grdecl_file with actum
+    """
+    grid = grid_from_file(egrid_path)
+    grid_actnum = pd.Series(grid.get_actnum().values.flatten())
+
+    return grid_actnum
 
 
 def truncate_num_string(string, cont, **kwargs):
@@ -39,7 +54,8 @@ def truncate_num_string(string, cont, **kwargs):
     low = kwargs.get("low", numbers.min())
     numbers[numbers > high] = high
     numbers[numbers < low] = low
-    LOGGER.debug("After truncation: min: %s, max: %s", numbers.min(), numbers.max())
+    LOGGER.debug("After truncation: min: %s, max: %s", numbers.min(),
+                 numbers.max())
     trunc_string = nums_to_string(numbers)
     # LOGGER.debug("Truncated string %s", trunc_string)
     return trunc_string
@@ -49,23 +65,23 @@ def ensure_steps(restart, insteps):
     """Checks and sort out steps for input to other functions
     args:
     restart (dict, typically from read_fun): the dictionary to work on
-    insteps (string, int or list): valid string are either first, last or iso-8601 format
-
+    insteps (string, int or list): valid string are either of strings
+                               first, or last
                                entries in list must be iso-8601 format
     """
     all_keys = restart.keys()
     key_list = list(all_keys)
     try:
-        pre_steps = key_list[insteps]
+        pre_steps = [key_list[insteps]]
 
-    except KeyError:
+    except TypeError:
 
         if isinstance(insteps, str):
 
             LOGGER.info("Fetching step %s", insteps)
             if insteps == "all":
 
-                 pre_steps = all_keys
+                pre_steps = all_keys
 
             if insteps == "first":
 
@@ -77,7 +93,7 @@ def ensure_steps(restart, insteps):
             pre_steps = [insteps]
 
         else:
-            LOGGER.info("Fetching steps %s", steps)
+            LOGGER.info("Fetching steps %s", insteps)
             pre_steps = insteps
 
     outsteps = []
@@ -92,6 +108,23 @@ def ensure_steps(restart, insteps):
     return outsteps
 
 
+def read_actnum(**kwargs):
+    """Chooses between actnum options"""
+    egrid_path = kwargs.get("egrid_path", None)
+    actnum_path = kwargs.get("actnum_path", None)
+    actnum = kwargs.get("actnum", None)
+
+    if actnum is None:
+
+        if egrid_path is not None:
+            actnum = get_grid_actnum(egrid_path)
+
+        elif actnum_path is not None:
+            actnum = read_grdecl(actnum_path)
+
+    return actnum
+
+
 def replace_with_grdecl(restart, name, grdecl_path, steps="all", **kwargs):
     """Replaces certain property in restart dictionary with contents of grdecl
         args:
@@ -102,17 +135,19 @@ def replace_with_grdecl(restart, name, grdecl_path, steps="all", **kwargs):
     kwargs (dict): the options, valid ones are decided by truncate_num_string
     """
     steps = ensure_steps(restart, steps)
+    actnum = read_actnum(**kwargs)
+    nums = read_grdecl(grdecl_path)
+    LOGGER.debug("Have read nums")
+    nums = limit_numbers(nums, 1, actnum, "==")
+
     for step in steps:
-        step_solutions = restart[step]["solutions"]
 
-        nums = read_grdecl(grdecl_path)
-
-        actnum_path = kwargs.get("actnum_path", None)
-        if actnum_path is not None:
-            actnum = read_grdecl(actnum_path)
-            nums = limit_numbers(nums, 1, actnum, "==")
-        nums = reshape_nums(nums, step_solutions[name][CONTENTS_NAME])
-        step_solutions[name][CONTENTS_NAME] = nums_to_string(nums)
+        nums = reshape_nums(nums,
+                            restart[step][SOL_NAME][name][CONTENTS_NAME])
+        LOGGER.debug("Done reshape")
+        restart[step][SOL_NAME][name][CONTENTS_NAME] = nums_to_string(nums)
+        with open("check_replace.txt", "w") as outhandle:
+            outhandle.write(restart[step][SOL_NAME][name][CONTENTS_NAME])
 
 
 def partial_replace_with_grdecl(restart, name, grdecl_path, replacer_path,
@@ -127,21 +162,25 @@ def partial_replace_with_grdecl(restart, name, grdecl_path, replacer_path,
     steps (list or string): time steps to use, these must be in iso-8601 format
     kwargs (dict): the options, valid ones are decided by truncate_num_string
     """
-    steps = ensure_steps(restart, steps)
-    for step in steps:
-        step_solutions = restart[step]["solutions"]
+    LOGGER.debug("The oper: %s", oper)
+    LOGGER.debug("The steps given: %s", steps)
 
-        org = pd.Series(find_nums(step_solutions[name][CONTENTS_NAME]))
-        replacement = read_grdecl(grdecl_path)
-        replacer = read_grdecl(replacer_path)
-        actnum_path = kwargs.get("actnum_path", None)
-        if actnum_path is not None:
-            actnum = read_grdecl(actnum_path)
-            replacement = limit_numbers(replacement, 1, actnum, "==")
-            replacer = limit_numbers(replacer, 1, actnum, "==")
-        changed = replace_numbers(org, nums, replacer, oper)
-        changed = reshape_nums(changed, step_solutions[name][CONTENTS_NAME])
-        step_solutions[name][CONTENTS_NAME] = nums_to_string(changed)
+    steps = ensure_steps(restart, steps)
+    actnum = read_actnum(**kwargs)
+    replacement = read_grdecl(grdecl_path)
+    replacer = read_grdecl(replacer_path)
+    replacement = limit_numbers(replacement, 1, actnum, "==")
+    replacer = limit_numbers(replacer, 1, actnum, "==")
+    for step in steps:
+
+        org = pd.Series(find_nums(restart[step][SOL_NAME][name][CONTENTS_NAME]))
+        changed = replace_numbers(org, replacement, oper, replacer)
+        changed = reshape_nums(changed,
+                               restart[step][SOL_NAME][name][CONTENTS_NAME])
+        restart[step][SOL_NAME][name][CONTENTS_NAME] = nums_to_string(changed)
+
+        with open("check_partial_replace.txt", "w") as outhandle:
+            outhandle.write(restart[step][SOL_NAME][name][CONTENTS_NAME])
 
 
 def truncate_numerical(restart, name, steps=None, **kwargs):
@@ -155,7 +194,7 @@ def truncate_numerical(restart, name, steps=None, **kwargs):
     steps = ensure_steps(restart, steps)
 
     for step in steps:
-        step_solutions = restart[step]["solutions"]
+        step_solutions = restart[step][SOL_NAME]
         step_solutions[name][CONTENTS_NAME] = truncate_num_string(
                 step_solutions[name][CONTENTS_NAME],
                 "INTE" not in step_solutions[name][HEAD_LINE],
@@ -218,14 +257,14 @@ def insert_initial_step(restart, subtract_days):
     LOGGER.debug("Creating step %s from %s", insert_step, exist_step)
 
     restart[insert_step] = copy.deepcopy(restart[exist_step])
-    restart[insert_step]["headers"]["INTEHEAD"]["Contents"] = change_date_intehead(
-      restart[insert_step]["headers"]["INTEHEAD"]["Contents"], insert_step
+    restart[insert_step][HEAD_NAME]["INTEHEAD"]["Contents"] = change_date_intehead(
+      restart[insert_step][HEAD_NAME]["INTEHEAD"]["Contents"], insert_step
     )
-    # restart[exist_step]["headers"]["INTEHEAD"]["Contents"] = "mu"
+    # restart[exist_step][HEAD_NAME]["INTEHEAD"]["Contents"] = "mu"
     restart.move_to_end(insert_step, last=False)
 
     for i, step in enumerate(restart):
-        restart[step]["headers"]["SEQNUM"]["Contents"] = f"    {i}\n"
+        restart[step][HEAD_NAME]["SEQNUM"]["Contents"] = f"    {i}\n"
     steps = list(restart.keys())
     LOGGER.debug(steps)
     time.sleep(3)
@@ -295,11 +334,14 @@ def read_grdecl(path):
 def make_selector(limiter, limit_values, oper):
     """makes a boolean pd.Series from a set criteria"""
 
+    LOGGER.debug("Limiter: ", limiter)
+    LOGGER.debug("Limit_values: ", limit_values)
+    LOGGER.debug("Oper: ", oper)
     operators = {">": operator.gt, ">=": operator.ge,
                  "<": operator.lt, "<=": operator.le,
                  "==": operator.eq, "!=": operator.ne}
 
-    if not isinstance(oper, list) and oper not in operators:
+    if not isinstance(limit_values, list) and oper not in operators:
         raise TypeError(
             f"operation needs to either be among {operators.keys()} " +
             "or be a list",
@@ -321,7 +363,7 @@ def make_selector(limiter, limit_values, oper):
         selector = operators[oper](limiter, limit_values)
 
     LOGGER.debug("Selector has %s values", selector.sum())
-
+    LOGGER.debug("Selector is ", selector)
     return selector
 
 
@@ -337,11 +379,16 @@ def limit_numbers(nums, limit_values, limiter=None, oper=">"):
 
     LOGGER.debug("Will limit %s", nums)
     LOGGER.debug("Limiter is %s", limiter)
+    LOGGER.debug("Will limit", nums, "\n")
+    LOGGER.debug("Limiter is", limiter, "\n")
+    LOGGER.debug(f"Limit values are {limit_values}")
+    LOGGER.debug("oper is ", oper, "\n")
 
     selector = make_selector(limiter, limit_values, oper)
     output = nums.loc[selector]
 
-    LOGGER.debug("After limiting size went from %s to %s", nums.size, output.size)
+    LOGGER.debug("After limiting size went from %s to %s", nums.size,
+                 output.size)
 
     if output.size == nums.size:
         LOGGER.warning("No reduction happened!")
@@ -349,23 +396,31 @@ def limit_numbers(nums, limit_values, limiter=None, oper=">"):
     return output
 
 
-def replace_numbers(nums, replace_values, replacement, replacer=None, oper=">"):
+def replace_numbers(nums, replacement, replacer_values, replacer=None,
+                    oper=">"):
     """swaps the numbers in a pandas series
     args:
     nums (pd.Series): the series to change
     replacer (pd.Series): the series to limit with
     replacement (pd.Series): the series to replace with
-    replace_values (number or list of numbers)
+    replacer_values (number or list of numbers): The values to be use in
+                                                  selection
     """
+    LOGGER.debug("nums:", nums)
+    LOGGER.debug("replace vals ", replacer_values)
+    LOGGER.debug("replacement ", replacement)
+    LOGGER.debug("oper: ", oper)
     out = nums.copy()
     if replacer is None:
         replacer = nums.copy()
 
-    selection = make_selector(replacer, replace_values, oper)
+    selection = make_selector(replacer, replacer_values, oper)
 
     LOGGER.debug("Replacing %s values", selection.sum())
+    LOGGER.debug(f"Replacing {selection.sum()} values")
     out.values[selection] = replacement.values[selection]
 
+    assert out.sum() != nums.sum(), "sum has not changed!!!"
     return out
 
 
@@ -523,13 +578,14 @@ def read_fun(path):
 
     contents = OrderedDict()
 
-    type_name = "headers"
+    type_name = HEAD_NAME
     block = ""
     prev_name = None
     head_name = None
     discrete = False
     # date_record = {}
     name_record = {}
+    date_record = {}
     try:
         with open(path, "r") as funhandle:
             LOGGER.debug("Opening the show")
@@ -578,15 +634,15 @@ def read_fun(path):
                     LOGGER.debug("---> %s", head_name)
 
                     if head_name == "STARTSOL":
-                        type_name = "solutions"
+                        type_name = SOL_NAME
                         block = ""
 
                     if head_name == "SEQNUM":
                         date_record = {}
-                        type_name = "headers"
+                        type_name = HEAD_NAME
                         try:
                             contents[date] = date_record
-                            # print(date_record)
+                            # LOGGER.debug(date_record)
                         except UnboundLocalError:
                             LOGGER.debug("No date record defined yet")
                         time.sleep(1)
@@ -609,8 +665,8 @@ def read_fun(path):
                                              TYPE_NAME: head_type}
 
     # The last date record will not be stored, adding that as well
-    # contents[date] = date_record
-    # print("returning ", contents)
+    contents[date] = date_record
+    # LOGGER.debug("returning ", contents)
     return contents
 
 
@@ -629,8 +685,8 @@ def write_fun(contents, file_name="TEST.FUNRST", check_file=None):
                 section = contents[date][data_type]
                 for header_name in section:
                     part = section[header_name]
-                    print(header_name)
-                    print(part.keys())
+                    LOGGER.debug(header_name)
+                    LOGGER.debug(part.keys())
                     outhandle.write(part[HEAD_LINE])
                     if header_name in ["STARTSOL", "ENDSOL"]:
                         continue

@@ -1,4 +1,5 @@
-"""Contains the class to modify restart files"""
+"""Contains class to modify restart files"""
+import logging
 import restarter.helpers as helpers
 
 
@@ -14,7 +15,10 @@ class RestartFile:
         self._binary_path = binary_path
         self._ascii_path = helpers.convert_restart(binary_path)
         self._dictionary = helpers.read_fun(self._ascii_path)
-        self._actnum_path = None
+        self._actnum = helpers.get_grid_actnum(binary_path.replace("UNRST",
+                                                                   "EGRID"))
+        self._logger = logging.getLogger(__name__)
+        self._logger.addHandler(logging.NullHandler())
 
     @property
     def binary_path(self):
@@ -31,15 +35,20 @@ class RestartFile:
         """Returns the dictionary"""
         return self._dictionary
 
-    @property
-    def actnum_path(self):
-        """Returns actnum path"""
-        return self._actnum_path
+    @dictionary.setter
+    def dictionary(self, dictionary):
+        """Sets the dictionary attribute"""
+        self._dictionary = dictionary
 
-    @actnum_path.setter
-    def actnum_path(self, grdecl_path):
-        """Sets actnum path"""
-        self._actnum_path = grdecl_path
+    @property
+    def actnum(self):
+        """Returns actnum"""
+        return self._actnum
+
+    @actnum.setter
+    def actnum(self, actnum):
+        """Sets actnum"""
+        self._actnum = actnum
 
     @property
     def steps(self):
@@ -56,24 +65,29 @@ class RestartFile:
         args:
         prop_name (str): name of property to be replaced
         grdecl_path (str): path to existing grdecl file to be used
-        steps (list or string): time steps to use in ISO-8601 format, or"""
-
-        kwargs = {"actnum_path": self._actnum_path}
-        helpers.replace_with_grdecl(self.dictionary, prop_name, grdecl_path,
+        steps (list or string): time steps to use in ISO-8601 format, or
+        """
+        self._logger.info("Replacement ongoing")
+        kwargs = {"actnum": self._actnum}
+        helpers.replace_with_grdecl(self._dictionary, prop_name, grdecl_path,
                                     steps, **kwargs)
 
     def partial_replace_with_grdecl(self, prop_name, grdecl_path,
-                                    replacer_path, replacement, oper, steps):
+                                    replacer_path, oper, steps):
+
         """Does a partial replace of a property in self._dictionary
         args:
         prop_name (str): name of property to be replaced
         grdecl_path (str): path to existing grdecl file to be used
+        replacer_path (str): path to file for controlling where to replace
+
         steps (list or string): time steps to use in ISO-8601 format, or
         """
-        kwargs = {"actnum_path": self._actnum_path}
-        helpers.partial_replace_with_grdecl(self.dictionary, prop_name,
+        kwargs = {"actnum": self._actnum}
+
+        helpers.partial_replace_with_grdecl(self._dictionary, prop_name,
                                             grdecl_path, replacer_path,
-                                            replacement, oper, steps,
+                                            oper, steps,
                                             **kwargs)
 
     def insert_initial_step(self, subtract_days):
@@ -92,6 +106,17 @@ class RestartFile:
         """
         helpers.truncate_numerical(self._dictionary, prop_name, steps,
                                    **kwargs)
+
+    def limit_time_steps(self, keep_steps):
+        """Removes the steps that are not in list keep_steps
+        args:
+        keep_steps (list, string or int): the steps to keep
+        """
+        keep_steps = helpers.ensure_steps(self._dictionary, keep_steps)
+        dict_steps = list(self._dictionary.keys())
+        for step in dict_steps:
+            if step not in keep_steps:
+                del self._dictionary[step]
 
     def __del__(self):
         """Writes back to ascii file, then converts to binary"""

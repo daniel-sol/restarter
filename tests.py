@@ -4,6 +4,8 @@ from operator import ne
 import pytest
 import numpy as np
 import helpers
+import core
+
 
 @pytest.fixture
 def return_string():
@@ -26,6 +28,15 @@ def actnum_property(path="test_data/actnum.grdecl"):
     path (str): path to grdecl file
     """
     return helpers.read_grdecl(path)
+
+
+@pytest.fixture
+def restart_dict(path="test_data/large.FUNRST"):
+    """Reads fun file into dictionary
+    args:
+    path (str): path to fun file
+    """
+    return helpers.read_fun(path)
 
 
 def test_investigate_string(return_string):
@@ -73,7 +84,7 @@ def test_read_disc_grdecl(actnum_property):
     """
     name = actnum_property.name
     size = actnum_property.size
-    assert name == "ACTNUM", f"Name is wrong is{name}, should be ACTNUM"
+    assert name == "ACTNUM", f"Name is wrong is {name}, should be ACTNUM"
     assert size == 770500, f"Wrong size of disc is {size}, should be 770500"
     # assert out.dtype = ""
 
@@ -166,7 +177,7 @@ def test_replace_with_list(pressure_property):
 
     print(swl.head())
     print(pressure_property.head())
-    new_pressure = helpers.replace_numbers(pressure_property, [1, 2, 3, 4], swl,
+    new_pressure = helpers.replace_numbers(pressure_property, swl, [1, 2, 3, 4],
                                            zones)
     pressure_property = pressure_property.astype(float)
     new_pressure = new_pressure.astype(float)
@@ -175,6 +186,68 @@ def test_replace_with_list(pressure_property):
     print(new_pressure.sum())
     assert pressure_property.sum() != new_pressure.sum(), "Sums are equal they should not be"
     assert ~(not new_pressure.equals(pressure_property)), "The two series are the same, they should not be"
+
+
+def test_replace_function(restart_dict):
+    """Tests replacement of a property in restart_dict
+    """
+    steps = list(restart_dict.keys())
+    print(len(steps))
+    first_step = steps[0]
+    print(first_step)
+    sol_name = "solutions"
+    press_name = "PRESSURE"
+    cont_name = "Contents"
+    swl_path = "test_data/swl.grdecl"
+    actnum_path = "test_data/actnum.grdecl"
+    print("Badabing")
+    pre_pressure = restart_dict[first_step][sol_name][press_name][cont_name]
+    print(pre_pressure)
+    helpers.replace_with_grdecl(restart_dict, press_name, swl_path, first_step,
+                                actnum_path=actnum_path)
+    post_pressure = restart_dict[first_step][sol_name][press_name][cont_name]
+    print(post_pressure)
+    assert pre_pressure != post_pressure, "No change after replacement.."
+
+
+def test_replace_function_from_restartfile():
+    """Tests replacement of a property in restart_dict
+    """
+    restart = core.RestartFile("test_data/large.unrst")
+    steps = list(restart.steps)
+    print(len(steps))
+    first_step = steps[0]
+    print(first_step)
+    sol_name = "solutions"
+    press_name = "PRESSURE"
+    cont_name = "Contents"
+    swl_path = "test_data/swl.grdecl"
+    restart.actnum_path = "test_data/actnum.grdecl"
+    print("Badabing")
+    pre_pressure = restart.dictionary[first_step][sol_name][press_name][cont_name]
+    print(pre_pressure)
+    restart.replace_with_grdecl(press_name, swl_path, first_step)
+
+    post_pressure = restart.dictionary[first_step][sol_name][press_name][cont_name]
+    print(post_pressure)
+    assert pre_pressure != post_pressure, "No change after replacement.."
+
+
+def test_make_selector(pressure_property):
+    """Tests function make_selector in helpers"""
+    print(pressure_property.astype(float).describe())
+    zones = helpers.read_grdecl("test_data/FIPZONE.grdecl")
+    org_size = pressure_property.size
+    assert zones.size == pressure_property.size, "The zones and pressure are not of same size"
+    print(org_size)
+    results = helpers.make_selector(pressure_property.astype(float), 100, ">")
+    greater_size = results.astype(int).sum()
+    print(greater_size)
+    assert greater_size < org_size, f"No change in size after greater than {greater_size} {org_size}"
+
+    zone_results = helpers.make_selector(zones, [1, 2, 3], "<")
+    zone_size = zone_results.astype(int).sum()
+    assert zone_size < org_size, f"No change in size after list shortening {zone_size} {org_size}"
 
 
 def test_insert_initial_step(fun_file="test_data/small.FUNRST"):
@@ -206,11 +279,12 @@ def test_insert_initial_step(fun_file="test_data/small.FUNRST"):
 
 
 if __name__ == "__main__":
+    test_replace_function(restart_dict())
     # test_replace_with_list()
     #test_limit_numbers()
     #time.sleep(1)
     # test_read_grdecl()
     # test_change_intehead()
-    test_insert_initial_step()
+    # test_insert_initial_step()
     # test_investigate_string()
     # test_truncate_str()
