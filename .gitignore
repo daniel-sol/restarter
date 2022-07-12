@@ -1,0 +1,8 @@
+.vscode*
+__pycache__*
+*.txt
+*.pyc
+# Test data that is used intermitently, not for keeping
+*large*
+# Written by one of the tests
+*TEST.FUNRST

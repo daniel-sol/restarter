@@ -33,7 +33,7 @@ def get_grid_actnum(egrid_path):
         grdecl_path (str): path to grdecl_file with actum
     """
     grid = grid_from_file(egrid_path)
-    grid_actnum = pd.Series(grid.get_actnum().values.flatten())
+    grid_actnum = pd.Series(np.ravel(grid.get_actnum().values, order="F"))
 
     return grid_actnum
 
