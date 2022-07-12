@@ -71,6 +71,8 @@ def ensure_steps(restart, insteps):
     """
     all_keys = restart.keys()
     key_list = list(all_keys)
+    pre_steps = None
+    print(key_list)
     try:
         pre_steps = [key_list[insteps]]
 
@@ -79,26 +81,29 @@ def ensure_steps(restart, insteps):
         if isinstance(insteps, str):
 
             LOGGER.info("Fetching step %s", insteps)
+
             if insteps == "all":
 
-                pre_steps = all_keys
+                pre_steps = key_list
 
-            if insteps == "first":
+            elif insteps == "first":
 
                 insteps = key_list[0]
 
-            if insteps == "last":
+            elif insteps == "last":
                 insteps = key_list[-1]
 
-            pre_steps = [insteps]
+            if pre_steps is None:
+                pre_steps = [insteps]
 
         else:
             LOGGER.info("Fetching steps %s", insteps)
             pre_steps = insteps
-
+    print("------------")
+    print(pre_steps)
     outsteps = []
     for step in pre_steps:
-        if step in all_keys:
+        if step in key_list:
             outsteps.append(step)
         else:
             LOGGER.warning("%s not valid", step)
@@ -194,10 +199,9 @@ def truncate_numerical(restart, name, steps=None, **kwargs):
     steps = ensure_steps(restart, steps)
 
     for step in steps:
-        step_solutions = restart[step][SOL_NAME]
-        step_solutions[name][CONTENTS_NAME] = truncate_num_string(
-                step_solutions[name][CONTENTS_NAME],
-                "INTE" not in step_solutions[name][HEAD_LINE],
+        restart[step][SOL_NAME][name][CONTENTS_NAME] = truncate_num_string(
+                restart[step][SOL_NAME][name][CONTENTS_NAME],
+                True,
                 **kwargs
         )
 
@@ -224,7 +228,7 @@ def find_nums(string):
     """Find numerical values inside of a text string
     args
     string (str): the string to interrogate
-    returns (nums):
+    returns nums (list): list or found numericals
 
     """
     # Removing comments
@@ -334,9 +338,9 @@ def read_grdecl(path):
 def make_selector(limiter, limit_values, oper):
     """makes a boolean pd.Series from a set criteria"""
 
-    LOGGER.debug("Limiter: ", limiter)
-    LOGGER.debug("Limit_values: ", limit_values)
-    LOGGER.debug("Oper: ", oper)
+    LOGGER.debug("Limiter: %s", limiter)
+    LOGGER.debug("Limit_values: %s", limit_values)
+    LOGGER.debug("Oper: %s", oper)
     operators = {">": operator.gt, ">=": operator.ge,
                  "<": operator.lt, "<=": operator.le,
                  "==": operator.eq, "!=": operator.ne}
@@ -363,7 +367,7 @@ def make_selector(limiter, limit_values, oper):
         selector = operators[oper](limiter, limit_values)
 
     LOGGER.debug("Selector has %s values", selector.sum())
-    LOGGER.debug("Selector is ", selector)
+    LOGGER.debug("Selector is %s", selector)
     return selector
 
 
@@ -379,10 +383,10 @@ def limit_numbers(nums, limit_values, limiter=None, oper=">"):
 
     LOGGER.debug("Will limit %s", nums)
     LOGGER.debug("Limiter is %s", limiter)
-    LOGGER.debug("Will limit", nums, "\n")
-    LOGGER.debug("Limiter is", limiter, "\n")
-    LOGGER.debug(f"Limit values are {limit_values}")
-    LOGGER.debug("oper is ", oper, "\n")
+    LOGGER.debug("Will limit %s \n", nums)
+    LOGGER.debug("Limiter is %s \n", limiter)
+    LOGGER.debug("Limit values are %s", limit_values)
+    LOGGER.debug("oper is %s \n", oper)
 
     selector = make_selector(limiter, limit_values, oper)
     output = nums.loc[selector]
@@ -406,10 +410,10 @@ def replace_numbers(nums, replacement, replacer_values, replacer=None,
     replacer_values (number or list of numbers): The values to be use in
                                                   selection
     """
-    LOGGER.debug("nums:", nums)
-    LOGGER.debug("replace vals ", replacer_values)
-    LOGGER.debug("replacement ", replacement)
-    LOGGER.debug("oper: ", oper)
+    LOGGER.debug("nums: %s", nums)
+    LOGGER.debug("replace vals %s", replacer_values)
+    LOGGER.debug("replacement %s", replacement)
+    LOGGER.debug("oper: %s", oper)
     out = nums.copy()
     if replacer is None:
         replacer = nums.copy()
@@ -417,10 +421,9 @@ def replace_numbers(nums, replacement, replacer_values, replacer=None,
     selection = make_selector(replacer, replacer_values, oper)
 
     LOGGER.debug("Replacing %s values", selection.sum())
-    LOGGER.debug(f"Replacing {selection.sum()} values")
+    LOGGER.debug("Replacing %s values", selection.sum())
     out.values[selection] = replacement.values[selection]
 
-    assert out.sum() != nums.sum(), "sum has not changed!!!"
     return out
 
 

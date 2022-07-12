@@ -1,10 +1,8 @@
 """Tests for restarter"""
-from hashlib import new
-from operator import ne
 import pytest
 import numpy as np
-import helpers
-import core
+import restarter.helpers as helpers
+import restarter.core as core
 
 
 @pytest.fixture
@@ -37,6 +35,21 @@ def restart_dict(path="test_data/large.FUNRST"):
     path (str): path to fun file
     """
     return helpers.read_fun(path)
+
+
+def test_ensure_steps():
+    """Tests function ensure steps in helpers"""
+    test_dict = {"2020-1-1": [], "2020-1-2": []}
+    test_keys = list(test_dict.keys())
+    func = helpers.ensure_steps
+    steps_tests = {"all": test_keys, "first": [test_keys[0]],
+                   "last": [test_keys[-1]], 0: [test_keys[0]], 1: [test_keys[1]],
+                   -1: [test_keys[-1]]}
+    for step in steps_tests:
+        return_val = func(test_dict, step)
+        error_string = f"{step} returned {return_val} should be {steps_tests[step]}"
+        print(f"{step} gives {return_val}")
+        assert return_val == steps_tests[step], error_string
 
 
 def test_investigate_string(return_string):
@@ -116,6 +129,7 @@ def test_change_intehead(path="test_data/inteheader.txt"):
 
 
 def test_read_scientific_string(path="test_data/pressure_string_noscientific.txt"):
+    """Tests helper function string_to_nums with scientific numbers"""
     with open(path, "r") as inhandle:
         text = inhandle.read()
     split_string = text.split()
@@ -126,25 +140,6 @@ def test_read_scientific_string(path="test_data/pressure_string_noscientific.txt
     print(len(nums))
 
 
-def test_limited_to_string_to_nums():
-    limited = test_limit_numbers()
-    results = helpers.string_to_nums(limited.to_string(index=False),
-                              False)
-    print(results)
-    size = results.size
-    print(size)
-
-
-def test_reshape_limited_with_string(path="test_data/pressure_string.txt"):
-    limited = test_limit_numbers()
-    with open(path, "r") as infile:
-        press_string = infile.read()
-    results = helpers.reshape_nums(limited, press_string)
-    print(results.shape)
-    size = results.size
-    print(size)
-
-
 def test_truncate_str(path="test_data/pressure.txt"):
     """test truncation of numbers in a string
     args:
@@ -152,8 +147,10 @@ def test_truncate_str(path="test_data/pressure.txt"):
     """
     with open(path, "r") as inhandle:
         num_string = inhandle.read()
-    truncated = helpers.find_nums(helpers.truncate_num_string(num_string, True, high=300, low=100))
-    print()
+    truncated = np.array(
+        helpers.find_nums(helpers.truncate_num_string(num_string, True,
+                                                      high=300, low=100)),
+    dtype=np.float)
     assert truncated.max() <= 300
     assert truncated.min() >= 100
 

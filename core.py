@@ -98,7 +98,7 @@ class RestartFile:
         """
         helpers.insert_initial_step(self._dictionary, subtract_days)
 
-    def truncate_property(self, prop_name, steps, kwargs):
+    def truncate_property(self, prop_name, steps, **kwargs):
         """Truncates property in self._dictionary
         args:
         prop_name (str): name of property to be replaced
