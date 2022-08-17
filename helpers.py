@@ -668,7 +668,7 @@ def read_fun(path):
                                              TYPE_NAME: head_type}
 
     # The last date record will not be stored, adding that as well
-    contents[date] = date_record
+#    contents[date] = date_record
     # LOGGER.debug("returning ", contents)
     return contents
 
@@ -681,7 +681,8 @@ def write_fun(contents, file_name="TEST.FUNRST", check_file=None):
     """
     # write_sol = False
     LOGGER.debug("Writing %s", file_name)
-    with open(file_name, "w") as outhandle:
+    file = Path(file_name)
+    with file.open("w") as outhandle:
         for date in contents:
             LOGGER.debug(date)
             for data_type in contents[date]:

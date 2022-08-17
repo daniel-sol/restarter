@@ -275,8 +275,14 @@ def test_insert_initial_step(fun_file="test_data/small.FUNRST"):
     assert first_step != second_step, "Steps are identical, they shouldn't be"
 
 
+def test_dictionary_in_core(name="test_data/small.unrst"):
+    """Tests dictionary in core"""
+    core.RestartFile(name)
+    print(core._dictionary)
+
+
 if __name__ == "__main__":
-    test_replace_function(restart_dict())
+    test_dictionary_in_core()
     # test_replace_with_list()
     #test_limit_numbers()
     #time.sleep(1)
