@@ -1,8 +1,10 @@
 """Tests for restarter"""
+import sys
 import pytest
 import numpy as np
-import restarter.helpers as helpers
-import restarter.core as core
+import helpers
+# import restarter.helpers as helpers
+# import restarter.core as core
 
 
 @pytest.fixture
@@ -50,6 +52,11 @@ def test_ensure_steps():
         error_string = f"{step} returned {return_val} should be {steps_tests[step]}"
         print(f"{step} gives {return_val}")
         assert return_val == steps_tests[step], error_string
+
+
+def test_restart_dict(restart_dict):
+    """Checks reading of restart"""
+    helpers.check_fun(restart_dict)
 
 
 def test_investigate_string(return_string):
@@ -162,15 +169,7 @@ def test_replace_with_list(pressure_property):
     zones = helpers.read_grdecl(zone_path)
     swl = helpers.read_grdecl(swl_path)
 
-    # selection = zones.isin(["1", "2", "3", "4"])
-    # new_pressure = pressure_property.copy()
-    # print(pressure_property[selection].sum())
-    # print(swl[selection].sum())
-    # assert selection.size == new_pressure.size, "Selection not equal in size to pressure"
-    # assert selection.sum() > 0, "Empty selection, something is wrong"
-    # assert new_pressure.size == swl.size, "Pressure not equal in size to swl"
     assert pressure_property.astype(float).sum() != swl.astype(float).sum(), "Pressure and swl have the same sum, something is wrong"
-    # new_pressure.values[selection] = swl.values[selection]
 
     print(swl.head())
     print(pressure_property.head())
@@ -205,6 +204,7 @@ def test_replace_function(restart_dict):
     post_pressure = restart_dict[first_step][sol_name][press_name][cont_name]
     print(post_pressure)
     assert pre_pressure != post_pressure, "No change after replacement.."
+    helpers.write_fun(restart_dict, "test_data/output.FUNRST", "test_data/large.FUNRST")
 
 
 def test_replace_function_from_restartfile():
@@ -282,7 +282,8 @@ def test_dictionary_in_core(name="test_data/small.unrst"):
 
 
 if __name__ == "__main__":
-    test_dictionary_in_core()
+    # print(sys.path)
+    test_restart_dict(helpers.read_fun("test_data/large.FUNRST"))
     # test_replace_with_list()
     #test_limit_numbers()
     #time.sleep(1)

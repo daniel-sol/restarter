@@ -20,7 +20,7 @@ LOGGER = logging.getLogger(__name__)
 LOGGER.addHandler(logging.NullHandler())
 # Names to use of the keys in the contents dictionary
 HEAD_LINE = "header line"
-CONTENTS_NAME = "Contents"
+CONT_NAME = "Contents"
 TYPE_NAME = "type"
 SOL_NAME = "solutions"
 HEAD_NAME = "headers"
@@ -48,7 +48,7 @@ def truncate_num_string(string, cont, **kwargs):
     numbers = string_to_nums(string, cont)
     LOGGER.debug("Truncating a string of length %s", numbers.size)
     valids = ["low", "high"]
-    if any([key not in valids for key in kwargs]):
+    if any(key not in valids for key in kwargs):
         raise KeyError("keyword args must be in ", valids)
     high = kwargs.get("high", numbers.max())
     low = kwargs.get("low", numbers.min())
@@ -56,7 +56,8 @@ def truncate_num_string(string, cont, **kwargs):
     numbers[numbers < low] = low
     LOGGER.debug("After truncation: min: %s, max: %s", numbers.min(),
                  numbers.max())
-    trunc_string = nums_to_string(numbers)
+
+    trunc_string = nums_to_string(reshape_nums(numbers, string))
     # LOGGER.debug("Truncated string %s", trunc_string)
     return trunc_string
 
@@ -148,11 +149,9 @@ def replace_with_grdecl(restart, name, grdecl_path, steps="all", **kwargs):
     for step in steps:
 
         nums = reshape_nums(nums,
-                            restart[step][SOL_NAME][name][CONTENTS_NAME])
+                            restart[step][SOL_NAME][name][CONT_NAME])
         LOGGER.debug("Done reshape")
-        restart[step][SOL_NAME][name][CONTENTS_NAME] = nums_to_string(nums)
-        with open("check_replace.txt", "w") as outhandle:
-            outhandle.write(restart[step][SOL_NAME][name][CONTENTS_NAME])
+        restart[step][SOL_NAME][name][CONT_NAME] = nums_to_string(nums)
 
 
 def partial_replace_with_grdecl(restart, name, grdecl_path, replacer_path,
@@ -178,14 +177,11 @@ def partial_replace_with_grdecl(restart, name, grdecl_path, replacer_path,
     replacer = limit_numbers(replacer, 1, actnum, "==")
     for step in steps:
 
-        org = pd.Series(find_nums(restart[step][SOL_NAME][name][CONTENTS_NAME]))
+        org = pd.Series(find_nums(restart[step][SOL_NAME][name][CONT_NAME]))
         changed = replace_numbers(org, replacement, oper, replacer)
         changed = reshape_nums(changed,
-                               restart[step][SOL_NAME][name][CONTENTS_NAME])
-        restart[step][SOL_NAME][name][CONTENTS_NAME] = nums_to_string(changed)
-
-        with open("check_partial_replace.txt", "w") as outhandle:
-            outhandle.write(restart[step][SOL_NAME][name][CONTENTS_NAME])
+                               restart[step][SOL_NAME][name][CONT_NAME])
+        restart[step][SOL_NAME][name][CONT_NAME] = nums_to_string(changed)
 
 
 def truncate_numerical(restart, name, steps=None, **kwargs):
@@ -199,8 +195,8 @@ def truncate_numerical(restart, name, steps=None, **kwargs):
     steps = ensure_steps(restart, steps)
 
     for step in steps:
-        restart[step][SOL_NAME][name][CONTENTS_NAME] = truncate_num_string(
-                restart[step][SOL_NAME][name][CONTENTS_NAME],
+        restart[step][SOL_NAME][name][CONT_NAME] = truncate_num_string(
+                restart[step][SOL_NAME][name][CONT_NAME],
                 True,
                 **kwargs
         )
@@ -253,6 +249,7 @@ def insert_initial_step(restart, subtract_days):
     restart (dict, typically from read_fun): the dictionary to work on
     subtract_days (int): number of days to subtract
     """
+    head_name = "INTEHEAD"
     exist_step = list(restart.keys())[0]
     dateformat = "%Y-%M-%d"
     date = datetime.strptime(exist_step, dateformat)
@@ -261,14 +258,13 @@ def insert_initial_step(restart, subtract_days):
     LOGGER.debug("Creating step %s from %s", insert_step, exist_step)
 
     restart[insert_step] = copy.deepcopy(restart[exist_step])
-    restart[insert_step][HEAD_NAME]["INTEHEAD"]["Contents"] = change_date_intehead(
-      restart[insert_step][HEAD_NAME]["INTEHEAD"]["Contents"], insert_step
+    restart[insert_step][HEAD_NAME][head_name][CONT_NAME] = change_date_intehead(
+      restart[insert_step][HEAD_NAME][head_name][CONT_NAME], insert_step
     )
-    # restart[exist_step][HEAD_NAME]["INTEHEAD"]["Contents"] = "mu"
     restart.move_to_end(insert_step, last=False)
 
     for i, step in enumerate(restart):
-        restart[step][HEAD_NAME]["SEQNUM"]["Contents"] = f"    {i}\n"
+        restart[step][HEAD_NAME]["SEQNUM"][CONT_NAME] = f"    {i}\n"
     steps = list(restart.keys())
     LOGGER.debug(steps)
     time.sleep(3)
@@ -322,7 +318,7 @@ def read_grdecl(path):
     returns numbers (pd.Series): name found in file asd key,
                            the numbers from the file as values
     """
-    contents = Path(path).read_text()
+    contents = Path(path).read_text(encoding="utf-8")
     # LOGGER.debug(contents)
     strings = [name for name in re.findall(r"[A-Za-z]+", contents)
                if "ECHO" not in name]
@@ -434,6 +430,7 @@ def split_head(line):
     returns parts (tuple): first entry is name, second is number of entries
     """
     parts = line.replace("'", "").strip().split()
+
     LOGGER.debug(parts)
     return parts
 
@@ -532,6 +529,19 @@ def investigate_string(string):
     return investigation
 
 
+def check_fun(restart):
+    """Checks that a restart dictionary seems correct
+    restart (dict, typically from read_fun): the dictionary to work on
+    """
+    for date in restart:
+        print(f"{date}")
+        for name in restart[date]:
+            print(f"  {name}")
+            for section in restart[date][name]:
+                print(f"    {section}")
+    print("And that will be all folks!")
+
+
 def read_back_fun(fun_path):
     """Reads file, returns a list of the lines
     args:
@@ -541,7 +551,7 @@ def read_back_fun(fun_path):
     """
     contents = []
     try:
-        with open(fun_path, "r") as funhandle:
+        with open(fun_path, "r", encoding="utf-8") as funhandle:
             contents = funhandle.read().split("\n")
     except OSError as ose:
         raise OSError("Cannot open ", fun_path) from ose
@@ -571,6 +581,18 @@ def check_files(first_fun, second_fun):
             break
 
 
+def add_date(contents, date, date_record):
+    """Ads date to dictionary from restart file
+    args:
+    contents (dict): dictionary of restart contents
+    date_record (dict): dictionary for given date
+    """
+    if date is not None and len(date_record) > 0 and date not in contents:
+        contents[date] = date_record
+    else:
+        LOGGER.debug("No date record defined yet")
+
+
 def read_fun(path):
     """Reads funrst file
     args:
@@ -583,92 +605,74 @@ def read_fun(path):
 
     type_name = HEAD_NAME
     block = ""
+    line = None
+    date = None
     prev_name = None
     head_name = None
-    discrete = False
-    # date_record = {}
     name_record = {}
     date_record = {}
-    try:
-        with open(path, "r") as funhandle:
-            LOGGER.debug("Opening the show")
-            # matches lines with possible whitespace,
-            # then letters inside '' then whitespace,
-            # also needed to add 1 / and _, because you have names like
-            # 1/BO and WAT_DEN
-            # then numbers,
-            # then letters inside ''
-            head_pattern = re.compile(
-                r"(\s+)?'([1\/_A-Z\s]+)'\s+(\d+)\s+'([A-Z]+)'"
-            )
-            for line in funhandle:
-                # LOGGER.debug(line)
+    LOGGER.debug("Opening the show")
+    # matches lines with possible whitespace,
+    # then letters inside '' then whitespace,
+    # also needed to add 1 / and _, because you have names like
+    # 1/BO and WAT_DEN
+    # then numbers,
+    # then letters inside ''
+    head_pattern = re.compile(
+        r"(\s+)?'([1\/_A-Z\s]+)'\s+(\d+)\s+'([A-Z]+)'"
+    )
+    for line in Path(path).open(encoding="utf-8"):
+        # LOGGER.debug(line)
+        # LOGGER.debug(date_record)
+        if head_pattern.match(line):
+            # Storing results from earlier reading
+            try:
+                date_record[type_name] = date_record.get(type_name,
+                                                         OrderedDict())
+                date_record[type_name][head_name] = name_record
+
+            except TypeError:
+                LOGGER.debug("Date record is not initialized properly")
+
+            if prev_name == "INTEHEAD":
+                date = find_date(block)
                 # LOGGER.debug(date_record)
-                if head_pattern.match(line):
-                    LOGGER.debug("prev: %s current: %s", prev_name, head_name)
-                    # Storing results from earlier reading
-                    try:
-                        if type_name not in date_record:
-                            date_record[type_name] = OrderedDict()
-                        date_record[type_name][head_name] = name_record
 
-                    except UnboundLocalError:
-                        LOGGER.debug("Date record does not exist")
-                    except TypeError:
-                        LOGGER.debug("Date record is not initialized properly")
+            if len(block) > 0:
+                LOGGER.debug("--> Block defined")
+                name_record[CONT_NAME] = block
+                block = ""
 
-                    if prev_name == "INTEHEAD":
-                        date = find_date(block)
-                        # LOGGER.debug(date_record)
+            # Defines the name record for the next header
+            head_name, _, head_type = split_head(line)
+            name_record = {HEAD_LINE: line, TYPE_NAME: head_type}
 
-                    if len(block) > 0:
-                        LOGGER.debug("--> Block defined")
-                        name_record[CONTENTS_NAME] = block
-                        block = ""
+            LOGGER.debug("---> %s", head_name)
 
-                    # Defines the name record for the next header
-                    head_name, _, head_type = split_head(line)
-                    name_record = {HEAD_LINE: line, TYPE_NAME: head_type}
+            if head_name == "STARTSOL":
+                type_name = SOL_NAME
+                block = ""
 
-                    # if prev_name == "INTEHEAD":
-                    #     exit()
-                    # discrete = "INTE" in line
+            if head_name == "SEQNUM":
+                date_record = {}
+                type_name = HEAD_NAME
+                add_date(contents, date, date_record)
 
-                    LOGGER.debug("---> %s", head_name)
+            prev_name = head_name
 
-                    if head_name == "STARTSOL":
-                        type_name = SOL_NAME
-                        block = ""
+        else:
+            if head_type == "INTE":
+                line = re.sub(r"\.[0-9]+", "", line)
+            block += line
 
-                    if head_name == "SEQNUM":
-                        date_record = {}
-                        type_name = HEAD_NAME
-                        try:
-                            contents[date] = date_record
-                            # LOGGER.debug(date_record)
-                        except UnboundLocalError:
-                            LOGGER.debug("No date record defined yet")
-                        time.sleep(1)
-                        # exit()
-                    prev_name = head_name
-
-                else:
-                    if discrete:
-                        line = re.sub(r"\.[0-9]+", "", line)
-                    block += line
-
-    except UnicodeDecodeError:
-        LOGGER.error("Cannot read %s, is this a binary file?", path)
-
-    except FileNotFoundError:
-        LOGGER.error("Cannot read %s, file does not exist", path)
     # The last ENDSOL will not be included, adding that
-    if head_name == "ENDSOL":
+    if head_name == "ENDSOL" and line is not None:
         date_record[type_name][head_name] = {HEAD_LINE: line,
                                              TYPE_NAME: head_type}
 
-    # The last date record will not be stored, adding that as well
-#    contents[date] = date_record
+    # Under certain conditions the last date record will not be stored,
+    # if this is the case adding that as well
+    add_date(contents, date, date_record)
     # LOGGER.debug("returning ", contents)
     return contents
 
@@ -682,7 +686,7 @@ def write_fun(contents, file_name="TEST.FUNRST", check_file=None):
     # write_sol = False
     LOGGER.debug("Writing %s", file_name)
     file = Path(file_name)
-    with file.open("w") as outhandle:
+    with file.open("w", encoding="utf-8") as outhandle:
         for date in contents:
             LOGGER.debug(date)
             for data_type in contents[date]:
@@ -694,7 +698,7 @@ def write_fun(contents, file_name="TEST.FUNRST", check_file=None):
                     outhandle.write(part[HEAD_LINE])
                     if header_name in ["STARTSOL", "ENDSOL"]:
                         continue
-                    outhandle.write(part[CONTENTS_NAME])
+                    outhandle.write(part[CONT_NAME])
     LOGGER.info("Written %s", file_name)
     if check_file is not None:
 
@@ -720,18 +724,16 @@ def convert_restart(restart_path, background=False):
     )
     command = ["convert.x", restart_path]
     LOGGER.debug(command)
-    process = Popen(command, stdout=PIPE,
-                    stderr=PIPE)
     try:
-        process = Popen(command, stdout=PIPE,
-                        stderr=PIPE)
-        if not background:
-            stdout, stderr = process.communicate()
-            if stdout:
-                LOGGER.debug(stdout.decode("utf-8"))
+        with Popen(command, stdout=PIPE,
+                   stderr=PIPE) as process:
+            if not background:
+                stdout, stderr = process.communicate()
+                if stdout:
+                    LOGGER.debug(stdout.decode("utf-8"))
 
-            if stderr:
-                LOGGER.debug(stderr.decode("utf-8"))
+                if stderr:
+                    LOGGER.debug(stderr.decode("utf-8"))
 
     except CalledProcessError:
         LOGGER.error('Could not run command %s', ' '.join(command))

@@ -1,6 +1,6 @@
 """Contains class to modify restart files"""
 import logging
-import restarter.helpers as helpers
+from restarter import helpers
 
 
 class RestartFile:
@@ -118,6 +118,6 @@ class RestartFile:
             if step not in keep_steps:
                 del self._dictionary[step]
 
-    # def __del__(self):
-        # """Writes back to ascii file, then converts to binary"""
-        # helpers.convert_restart(self.write_fun())
+    def __del__(self):
+        """Writes back to ascii file, then converts to binary"""
+        helpers.convert_restart(self.write_fun())
