@@ -242,6 +242,34 @@ def find_nums(string):
     LOGGER.debug("Found %s numbers", len(nums))
     return nums
 
+def limit_time_steps(restart, keep_steps):
+    """Removes the steps that are not in list keep_steps
+        args:
+        restart (dict, typically from read_fun): the dictionary to work on
+        keep_steps (list, string or int): the steps to keep
+    """
+    keep_steps = ensure_steps(restart, keep_steps)
+    dict_steps = list(restart.keys())
+    for step in dict_steps:
+        if step not in keep_steps:
+            del restart[step]
+
+
+def limit_time_steps_file(restart, file_name):
+    """Removes the steps that are not in file
+        args:
+        restart (dict, typically from read_fun): the dictionary to work on
+        keep_file (string): file with the steps to keep
+    """
+    try:
+        contents = Path(file_name).read_text(encoding="utf-8").split("\n")
+        keep_steps = [date for date in contents if date != ""]
+
+    except TypeError:
+        LOGGER.debug("File not input")
+
+    limit_time_steps(restart, keep_steps)
+
 
 def insert_initial_step(restart, subtract_days):
     """Inserts a step at start of restart file

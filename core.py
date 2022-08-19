@@ -111,12 +111,12 @@ class RestartFile:
         """Removes the steps that are not in list keep_steps
         args:
         keep_steps (list, string or int): the steps to keep
+
         """
-        keep_steps = helpers.ensure_steps(self._dictionary, keep_steps)
-        dict_steps = list(self._dictionary.keys())
-        for step in dict_steps:
-            if step not in keep_steps:
-                del self._dictionary[step]
+        try:
+            helpers.limit_time_steps_file(self._dictionary, keep_steps)
+        except TypeError:
+            helpers.limit_time_steps(self._dictionary, keep_steps)
 
     def __del__(self):
         """Writes back to ascii file, then converts to binary"""
