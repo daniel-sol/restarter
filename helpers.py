@@ -265,7 +265,7 @@ def limit_time_steps_file(restart, file_name):
         contents = Path(file_name).read_text(encoding="utf-8").split("\n")
         keep_steps = [date for date in contents if date != ""]
 
-    except TypeError:
+    except FileNotFoundError:
         LOGGER.debug("File not input")
 
     limit_time_steps(restart, keep_steps)
