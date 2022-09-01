@@ -54,9 +54,75 @@ def test_ensure_steps():
         assert return_val == steps_tests[step], error_string
 
 
+def test_find_nums_mixed_string(path="test_data/mixed_string.txt"):
+    """finding nums in a mixed string"""
+    with open(path, "r") as inhandle:
+        mixed = inhandle.read()
+    nums = helpers.find_nums(mixed)
+    correct_size = 104
+    num_size = len(nums)
+    print(nums)
+    assert  num_size == correct_size, f"Wrong set of numbers {num_size} vs {correct_size}"
+
+
 def test_restart_dict(restart_dict):
     """Checks reading of restart"""
     helpers.check_fun(restart_dict)
+
+
+def test_nums_to_string():
+    """Tests function nums_to_string"""
+    string = helpers.nums_to_string(np.arange(10))
+    results = '  0\n  1\n  2\n  3\n  4\n  5\n  6\n  7\n  8\n  9\n'
+    assert string == results, f"String is {string}, should be {results}"
+
+
+def test_find_nums():
+    """Tests finding the numbers in a string"""
+    string = (
+    """
+    173.882751     174.296326     135.613281     173.494736
+    174.038651      174.70993     175.039764     173.864014
+    173.338898     173.834641     173.955643     174.093491
+     135.79747     136.025009     174.171631     135.828781
+    174.465851     174.300064     135.832092     174.346695
+    174.461823      174.39386     175.045898     174.638412
+    175.123505     175.396927     136.099228     174.273865
+    174.470627     174.196945     173.681488     174.174561
+    174.522537     174.257263     174.403656     174.384125
+    136.027695      135.78096      135.66568     135.701187
+    174.245178     174.034698     136.145401     135.818314
+    174.650925     174.610596     135.962921     174.786819
+    174.445267     174.728653     174.567001     136.267166
+    174.733124     174.601501     136.447388     174.626205
+    174.654755     174.788223     136.145569     136.177948
+    """)
+    nums = helpers.find_nums(string)
+    print(nums)
+
+
+def test_key_combinations():
+    """tests the combination of keys one can input"""
+    the_key_dict = {"2022-02-01": "blah", "22-03-01": "bu",
+                    "22-04-01": "hi",  "22-05-01": "ho",
+                    "22-06-01": "btw"}
+    keys_as_dict = list(the_key_dict)
+    all_keys = helpers.ensure_steps(the_key_dict, "all")
+    assert all_keys == keys_as_dict, "Does not extract all keys"
+    first_key = helpers.ensure_steps(the_key_dict, "first")
+    assert first_key == [keys_as_dict[0]], "First key not correctly extracted"
+    num_first_key = helpers.ensure_steps(the_key_dict, 0)
+    assert num_first_key == [keys_as_dict[0]], "First num key not correctly extracted"
+
+    last_key = helpers.ensure_steps(the_key_dict, "last")
+    assert last_key == [keys_as_dict[-1]], "Last key not correctly extracted"
+    num_last_key = helpers.ensure_steps(the_key_dict, -1)
+    assert num_last_key == [keys_as_dict[-1]], "Last num key not correctly extracted"
+
+
+def test_restart_dict_keys(restart_dict):
+    """Checks reading of restart"""
+    print(restart_dict.keys())
 
 
 def test_investigate_string(return_string):
@@ -282,8 +348,11 @@ def test_dictionary_in_core(name="test_data/small.unrst"):
 
 
 if __name__ == "__main__":
+    test_find_nums_mixed_string()
+    # test_find_nums()
+    # test_key_combinations()
     # print(sys.path)
-    test_restart_dict(helpers.read_fun("test_data/large.FUNRST"))
+    # test_restart_dict(helpers.read_fun("test_data/large.FUNRST"))
     # test_replace_with_list()
     #test_limit_numbers()
     #time.sleep(1)

@@ -16,8 +16,8 @@ from xtgeo import grid_from_file
 
 # logging.basicConfig()
 LOGGER = logging.getLogger(__name__)
-# LOGGER.setLevel(logging.DEBUG)
-LOGGER.addHandler(logging.NullHandler())
+LOGGER.setLevel(logging.DEBUG)
+# LOGGER.addHandler(logging.NullHandler())
 # Names to use of the keys in the contents dictionary
 HEAD_LINE = "header line"
 CONT_NAME = "Contents"
@@ -73,7 +73,7 @@ def ensure_steps(restart, insteps):
     all_keys = restart.keys()
     key_list = list(all_keys)
     pre_steps = None
-    print(key_list)
+    LOGGER.debug(key_list)
     try:
         pre_steps = [key_list[insteps]]
 
@@ -100,8 +100,8 @@ def ensure_steps(restart, insteps):
         else:
             LOGGER.info("Fetching steps %s", insteps)
             pre_steps = insteps
-    print("------------")
-    print(pre_steps)
+    LOGGER.debug("------------")
+    LOGGER.debug(pre_steps)
     outsteps = []
     for step in pre_steps:
         if step in key_list:
@@ -227,6 +227,7 @@ def find_nums(string):
     returns nums (list): list or found numericals
 
     """
+    LOGGER.debug("String to convert %s", string)
     # Removing comments
     # Adding line break to ensure that the last line is included
     # When removing comment lines
@@ -241,6 +242,7 @@ def find_nums(string):
     # LOGGER.debug(nums)
     LOGGER.debug("Found %s numbers", len(nums))
     return nums
+
 
 def limit_time_steps(restart, keep_steps):
     """Removes the steps that are not in list keep_steps
@@ -264,11 +266,10 @@ def limit_time_steps_file(restart, file_name):
     try:
         contents = Path(file_name).read_text(encoding="utf-8").split("\n")
         keep_steps = [date for date in contents if date != ""]
+        limit_time_steps(restart, keep_steps)
 
     except FileNotFoundError:
         LOGGER.debug("File not input")
-
-    limit_time_steps(restart, keep_steps)
 
 
 def insert_initial_step(restart, subtract_days):
@@ -329,13 +330,14 @@ def find_date(inte_string):
     inte_string (str): string containing the intehead
     returns date (str): the column name to select from the corresponding ecl2df
     """
-    LOGGER.debug("What to parse:")
-    LOGGER.debug(inte_string)
+    print("What to parse:")
+    print(inte_string)
     head_array = reshape_nums(string_to_nums(inte_string, False), inte_string)
     year = int(head_array[11, 0])
     mon = int(head_array[10, 5])
     day = int(head_array[10, 4])
     return_date = f"{year}-{mon:02d}-{day:02d}"
+    print(return_date)
     return return_date
 
 
@@ -445,7 +447,6 @@ def replace_numbers(nums, replacement, replacer_values, replacer=None,
     selection = make_selector(replacer, replacer_values, oper)
 
     LOGGER.debug("Replacing %s values", selection.sum())
-    LOGGER.debug("Replacing %s values", selection.sum())
     out.values[selection] = replacement.values[selection]
 
     return out
@@ -516,8 +517,12 @@ def nums_to_string(array):
     args:
     array (np.array): what should be converted to string
     return string (str): string from array"""
-    string = pd.DataFrame(array).to_string(header=False, index=False,
-                                           na_rep="")
+    pre_string = pd.DataFrame(array)
+    pre_cols = pre_string.columns
+    pre_string["space"] = "  "
+    pre_string = pre_string[["space"] + list(pre_cols)]
+    string = pre_string.to_string(header=False, index=False,
+                                  na_rep="")
     if not string.endswith("\n"):
         string += "\n"
     return string
@@ -562,12 +567,12 @@ def check_fun(restart):
     restart (dict, typically from read_fun): the dictionary to work on
     """
     for date in restart:
-        print(f"{date}")
+        LOGGER.debug("date: %s", date)
         for name in restart[date]:
-            print(f"  {name}")
+            LOGGER.debug("  %s", name)
             for section in restart[date][name]:
-                print(f"    {section}")
-    print("And that will be all folks!")
+                LOGGER.debug("    %s", section)
+    LOGGER.debug("And that will be all folks!")
 
 
 def read_back_fun(fun_path):
@@ -615,6 +620,7 @@ def add_date(contents, date, date_record):
     contents (dict): dictionary of restart contents
     date_record (dict): dictionary for given date
     """
+    print("Adding date %s to contents", date)
     if date is not None and len(date_record) > 0 and date not in contents:
         contents[date] = date_record
     else:
@@ -682,9 +688,10 @@ def read_fun(path):
                 block = ""
 
             if head_name == "SEQNUM":
-                date_record = {}
+
                 type_name = HEAD_NAME
                 add_date(contents, date, date_record)
+                date_record = {}
 
             prev_name = head_name
 
@@ -700,6 +707,7 @@ def read_fun(path):
 
     # Under certain conditions the last date record will not be stored,
     # if this is the case adding that as well
+    print("Checking if one needs that final addition with date %s", date)
     add_date(contents, date, date_record)
     # LOGGER.debug("returning ", contents)
     return contents
