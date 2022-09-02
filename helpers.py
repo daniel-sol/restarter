@@ -16,8 +16,7 @@ from xtgeo import grid_from_file
 
 # logging.basicConfig()
 LOGGER = logging.getLogger(__name__)
-LOGGER.setLevel(logging.DEBUG)
-# LOGGER.addHandler(logging.NullHandler())
+LOGGER.addHandler(logging.NullHandler())
 # Names to use of the keys in the contents dictionary
 HEAD_LINE = "header line"
 CONT_NAME = "Contents"
