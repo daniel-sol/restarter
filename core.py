@@ -115,7 +115,8 @@ class RestartFile:
         """
         try:
             helpers.limit_time_steps_file(self._dictionary, keep_steps)
-        except FileNotFoundError:
+
+        except (TypeError, FileNotFoundError):
             helpers.limit_time_steps(self._dictionary, keep_steps)
 
     def __del__(self):
